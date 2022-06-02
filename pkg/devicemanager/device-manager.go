@@ -32,16 +32,10 @@ func NewVGPUDeviceManager(configFile string) (*VGPUDeviceManager, error) {
 		return nil, fmt.Errorf("unable to parse config file: %v", err)
 	}
 
-	nvlib := nvmdev.New()
-	parentDevices, err := nvlib.GetAllParentDevices()
-	if err != nil {
-		return nil, fmt.Errorf("error getting all NVIDIA PCI devices: %v", err)
-	}
-
 	return &VGPUDeviceManager{
 		config:                 config,
-		nvmdev:                 nvlib,
-		parentDevices:          parentDevices,
+		nvmdev:                 nvmdev.New(),
+		parentDevices:          []*nvmdev.ParentDevice{},
 		availableVGPUTypesMap:  make(map[string][]string),
 		unconfiguredParentsMap: make(map[string]*nvmdev.ParentDevice),
 	}, nil
@@ -81,6 +75,13 @@ func (m *VGPUDeviceManager) reconcileVGPUDevices(desiredTypes []string) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	parentDevices, err := m.nvmdev.GetAllParentDevices()
+	log.Debugf("Number of parent devices: %d", len(parentDevices))
+	if err != nil {
+		return fmt.Errorf("error getting all NVIDIA PCI devices: %v", err)
+	}
+	m.parentDevices = parentDevices
+
 	/*
 		log.Info("Deleting any undesired vGPU devices...")
 		err := m.deleteUndesiredVGPUDevices(desiredTypes)
@@ -90,7 +91,7 @@ func (m *VGPUDeviceManager) reconcileVGPUDevices(desiredTypes []string) error {
 	*/
 
 	log.Info("Deleting any existing vGPU devices...")
-	err := m.deleteAllVGPUDevices()
+	err = m.deleteAllVGPUDevices()
 	if err != nil {
 		return fmt.Errorf("error deleting existing vGPU devices: %v", err)
 	}
