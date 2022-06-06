@@ -1,0 +1,30 @@
+version: v1
+vgpu-configs:
+  default:
+    - "A100-4C"
+    - "A30-4C"
+    - "T4-1Q"
+  a100-40gb-small:
+    - "A100-4C"
+    - "A100-5C"
+  a100-40gb-medium:
+    - "A100-8C"
+    - "A100-10C"
+  a100-40gb-full-profile:
+    - "A100-40C"
+  a30-small:
+    - "A30-4C"
+    - "A30-6C"
+  a30-medium:
+    - "A30-8C"
+    - "A30-12C"
+  a30-full-profile:
+    - "A30-24C"
+  t4-small:
+    - "T4-1Q"
+    - "T4-2Q"
+  t4-medium:
+    - "T4-4Q"
+    - "T4-8Q"
+  t4-full-profile:
+    - "T4-16Q"
