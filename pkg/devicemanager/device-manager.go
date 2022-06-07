@@ -82,14 +82,6 @@ func (m *VGPUDeviceManager) reconcileVGPUDevices(desiredTypes []string) error {
 	}
 	m.parentDevices = parentDevices
 
-	/*
-		log.Info("Deleting any undesired vGPU devices...")
-		err := m.deleteUndesiredVGPUDevices(desiredTypes)
-		if err != nil {
-			return fmt.Errorf("error deleting undesired vGPU devices: %v", err)
-		}
-	*/
-
 	log.Info("Deleting any existing vGPU devices...")
 	err = m.deleteAllVGPUDevices()
 	if err != nil {
@@ -156,36 +148,6 @@ func (m *VGPUDeviceManager) deleteAllVGPUDevices() error {
 	}
 
 	for _, device := range mdevs {
-		err := device.Delete()
-		if err != nil {
-			return fmt.Errorf("failed to delete mdev: %v\n", err)
-		}
-		log.WithFields(log.Fields{
-			"vGPUType": device.MDEVType,
-			"uuid":     device.UUID,
-		}).Info("Successfully deleted vGPU device")
-	}
-
-	return nil
-}
-
-// deleteUndesiredVGPUDevices iterates through all the vGPU devices that exist
-// on the node, and only deletes them if they are of a type not present in the
-// list of desired types.
-func (m *VGPUDeviceManager) deleteUndesiredVGPUDevices(desiredTypes []string) error {
-	mdevs, err := m.nvmdev.GetAllDevices()
-	if err != nil {
-		return fmt.Errorf("unable to get all mdev devices: %v", err)
-	}
-
-	for _, device := range mdevs {
-		if stringInSlice(desiredTypes, device.MDEVType) {
-			continue
-		}
-		log.WithFields(log.Fields{
-			"vGPUType": device.MDEVType,
-			"uuid":     device.UUID,
-		}).Info("vGPU device is not a desired type. Deleting...")
 		err := device.Delete()
 		if err != nil {
 			return fmt.Errorf("failed to delete mdev: %v\n", err)

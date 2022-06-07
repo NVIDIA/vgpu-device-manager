@@ -12,10 +12,12 @@ import (
 	"context"
 	dm "gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/devicemanager"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	k8swatch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sync"
+	"time"
 )
 
 const (
@@ -301,30 +303,6 @@ func getNodeStateLabels(clientset *kubernetes.Clientset) error {
 }
 
 func shutdownGPUOperands(clientset *kubernetes.Clientset) error {
-	// TODO: Is there a better way of accomplishing this?
-	//     kubectl wait --for=delete pod ...
-
-	// start watching pod events prior to shutting pods down.
-	shutdownPlugin := (pluginDeployed == "true")
-	watchPlugin, err := clientset.CoreV1().Pods(namespaceFlag).Watch(context.TODO(), metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeNameFlag),
-		LabelSelector: "app=nvidia-sandbox-device-plugin-daemonset",
-	})
-	if err != nil {
-		return fmt.Errorf("error creating watch for sandbox-device-plugin pod: %v", err)
-	}
-	defer watchPlugin.Stop()
-
-	shutdownValidator := (validatorDeployed == "true")
-	watchValidator, err := clientset.CoreV1().Pods(namespaceFlag).Watch(context.TODO(), metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeNameFlag),
-		LabelSelector: "app=nvidia-sandbox-validator",
-	})
-	if err != nil {
-		return fmt.Errorf("error creating watch for sandbox-validator pod: %v", err)
-	}
-	defer watchValidator.Stop()
-
 	// shutdown components by updating their respective state labels.
 	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
 	if err != nil {
@@ -343,24 +321,47 @@ func shutdownGPUOperands(clientset *kubernetes.Clientset) error {
 		return fmt.Errorf("unable to update node object: %v", err)
 	}
 
-	// Only watch for delete event if component was previously running.
-	// Otherwise, no events will be received and loop with hang forever.
-	if shutdownPlugin {
-		log.Info("Waiting for sandbox-device-plugin to shutdown")
-		for event := range watchPlugin.ResultChan() {
-			if event.Type == k8swatch.Deleted {
-				break
-			}
-		}
+	// wait for pods to be deleted
+	log.Infof("Waiting for sandbox-device-plugin to shutdown")
+	err = waitForPodDeletion(clientset, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeNameFlag),
+		LabelSelector: "app=nvidia-sandbox-device-plugin-daemonset",
+	})
+	if err != nil {
+		return fmt.Errorf("Error shutting down sandbox-device-plugin: %v", err)
 	}
 
-	if shutdownValidator {
-		log.Info("Waiting for sandbox-validator to shutdown")
-		for event := range watchValidator.ResultChan() {
-			if event.Type == k8swatch.Deleted {
-				break
-			}
+	log.Infof("Waiting for sandbox-validator to shutdown")
+	err = waitForPodDeletion(clientset, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeNameFlag),
+		LabelSelector: "app=nvidia-sandbox-validator",
+	})
+	if err != nil {
+		return fmt.Errorf("Error shutting down sandbox-validator: %v", err)
+	}
+
+	return nil
+}
+
+func waitForPodDeletion(clientset *kubernetes.Clientset, listOpts metav1.ListOptions) error {
+	pollFunc := func() (bool, error) {
+		podList, err := clientset.CoreV1().Pods(namespaceFlag).List(context.TODO(), listOpts)
+		if apierrors.IsNotFound(err) {
+			log.Infof("Pod was already deleted")
+			return true, nil
 		}
+		if err != nil {
+			return false, err
+		}
+		if len(podList.Items) == 0 {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	err := wait.PollImmediate(1*time.Second, 120*time.Second, pollFunc)
+	if err != nil {
+		return fmt.Errorf("Error deleting pod: %v", err)
 	}
 
 	return nil
