@@ -1,30 +1,774 @@
 version: v1
 vgpu-configs:
+  # The 'default' config contains one vGPU type per supported GPU.
+  # This config is meant to be a "fallback" if another config
+  # is not specified.
+  #
+  # The default vGPU types specified in this list are C-Series,
+  # unless the GPU does not support C-Series, and are the largest
+  # vGPU types for the corresponding GPU (i.e. for the A100 PCIe
+  # 40GB card, the "A100-40C" is selected).
+  #
+  # Virtual GPU Types reference:
+  # https://docs.nvidia.com/grid/latest/grid-vgpu-user-guide/index.html#virtual-gpu-types-grid-reference
   default:
-    - "A100-4C"
-    - "A30-4C"
-    - "T4-1Q"
-  a100-40gb-small:
-    - "A100-4C"
-    - "A100-5C"
-  a100-40gb-medium:
-    - "A100-8C"
-    - "A100-10C"
-  a100-40gb-full-profile:
     - "A100-40C"
-  a30-small:
-    - "A30-4C"
-    - "A30-6C"
-  a30-medium:
-    - "A30-8C"
-    - "A30-12C"
-  a30-full-profile:
+    - "A100X-40C"
+    - "A100D-80C"
+    - "A100DX-40C"
+    - "A40-48C"
     - "A30-24C"
-  t4-small:
-    - "T4-1Q"
-    - "T4-2Q"
-  t4-medium:
-    - "T4-4Q"
-    - "T4-8Q"
-  t4-full-profile:
+    - "A16-16C"
+    - "A10-24C"
+    - "A2-16C"
+    - "RTX6000-48C"
+    - "RTX5500-24C"
+    - "RTX5000-24C"
+    - "M60-8Q"
+    - "M10-8Q"
+    - "M6-8Q"
+    - "P100C-12C"
+    - "P100-16C"
+    - "P100X-16C"
+    - "P40-24C"
+    - "P6-16C"
+    - "P4-8C"
+    - "T4-16C"
+    - "V100X-16C"
+    - "V100DX-32C"
+    - "V100-16C"
+    - "V100D-32C"
+    - "V100S-32C"
+    - "V100L-16C"
+    - "RTX8000-48C"
+    - "RTX8000P-48C"
+    - "RTX6000-24C"
+    - "RTX6000P-24C"
+
+  # NVIDIA A100 PCIe 40GB, C-Series
+  A100-40C:
+    - "A100-40C"
+  A100-20C:
+    - "A100-20C"
+  A100-10C:
+    - "A100-10C"
+  A100-8C:
+    - "A100-8C"
+  A100-5C:
+    - "A100-5C"
+  A100-4C:
+    - "A100-4C"
+
+  # NVIDIA A100 HGX 40GB, C-Series
+  A100X-40C:
+    - "A100X-40C"
+  A100X-20C:
+    - "A100X-20C"
+  A100X-10C:
+    - "A100X-10C"
+  A100X-8C:
+    - "A100X-8C"
+  A100X-5C:
+    - "A100X-5C"
+  A100X-4C:
+    - "A100X-4C"
+
+  # NVIDIA A100 PCIe 80GB, C-Series
+  A100D-80C:
+    - "A100D-80C"
+  A100D-40C:
+    - "A100D-40C"
+  A100D-20C:
+    - "A100D-20C"
+  A100D-16C:
+    - "A100D-16C"
+  A100D-10C:
+    - "A100D-10C"
+  A100D-8C:
+    - "A100D-8C"
+  A100D-4C:
+    - "A100D-4C"
+
+  # NVIDIA A100 HGX 80GB, C-Series
+  A100DX-80C:
+    - "A100DX-80C"
+  A100DX-40C:
+    - "A100DX-40C"
+  A100DX-20C:
+    - "A100DX-20C"
+  A100DX-16C:
+    - "A100DX-16C"
+  A100DX-10C:
+    - "A100DX-10C"
+  A100DX-8C:
+    - "A100DX-8C"
+  A100DX-4C:
+    - "A100DX-4C"
+
+  # NVIDIA A40, Q-Series
+  A40-48Q:
+    - "A40-48Q"
+  A40-24Q:
+    - "A40-24Q"
+  A40-16Q:
+    - "A40-16Q"
+  A40-12Q:
+    - "A40-12Q"
+  A40-8Q:
+    - "A40-8Q"
+  A40-6Q:
+    - "A40-6Q"
+  A40-4Q:
+    - "A40-4Q"
+  A40-3Q:
+    - "A40-3Q"
+  A40-2Q:
+    - "A40-2Q"
+  A40-1Q:
+    - "A40-1Q"
+
+  # NVIDIA A40, C-Series
+  A40-48C:
+    - "A40-48C"
+  A40-24C:
+    - "A40-24C"
+  A40-16C:
+    - "A40-16C"
+  A40-12C:
+    - "A40-12C"
+  A40-8C:
+    - "A40-8C"
+  A40-6C:
+    - "A40-6C"
+  A40-4C:
+    - "A40-4C"
+
+  # NVIDIA A30, C-Series
+  A30-24C:
+    - "A30-24C"
+  A30-12C:
+    - "A30-12C"
+  A30-8C:
+    - "A30-8C"
+  A30-6C:
+    - "A30-6C"
+  A30-4C:
+    - "A30-4C"
+
+  # NVIDIA A16, Q-Series
+  A16-16Q:
+    - "A16-16Q"
+  A16-8Q:
+    - "A16-8Q"
+  A16-4Q:
+    - "A16-4Q"
+  A16-2Q:
+    - "A16-2Q"
+  A16-1Q:
+    - "A16-1Q"
+
+  # NVIDIA A16, C-Series
+  A16-16C:
+    - "A16-16C"
+  A16-8C:
+    - "A16-8C"
+  A16-4C:
+    - "A16-4C"
+
+  # NVIDIA A10, Q-Series
+  A10-24Q:
+    - "A10-24Q"
+  A10-12Q:
+    - "A10-12Q"
+  A10-8Q:
+    - "A10-8Q"
+  A10-6Q:
+    - "A10-6Q"
+  A10-4Q:
+    - "A10-4Q"
+  A10-3Q:
+    - "A10-3Q"
+  A10-2Q:
+    - "A10-2Q"
+  A10-1Q:
+    - "A10-1Q"
+
+  # NVIDIA A10, C-Series
+  A10-24C:
+    - "A10-24C"
+  A10-12C:
+    - "A10-12C"
+  A10-8C:
+    - "A10-8C"
+  A10-6C:
+    - "A10-6C"
+  A10-4C:
+    - "A10-4C"
+
+  # NVIDIA A2, Q-Series
+  A2-16Q:
+    - "A2-16Q"
+  A2-8Q:
+    - "A2-8Q"
+  A2-4Q:
+    - "A2-4Q"
+  A2-2Q:
+    - "A2-2Q"
+  A2-1Q:
+    - "A2-1Q"
+
+  # NVIDIA A2, C-Series
+  A2-16C:
+    - "A2-16C"
+  A2-8C:
+    - "A2-8C"
+  A2-4C:
+    - "A2-4C"
+
+  # NVIDIA RTX A6000, Q-Series
+  RTXA6000-48Q:
+    - "RTXA6000-48Q"
+  RTXA6000-24Q:
+    - "RTXA6000-24Q"
+  RTXA6000-16Q:
+    - "RTXA6000-16Q"
+  RTXA6000-12Q:
+    - "RTXA6000-12Q"
+  RTXA6000-8Q:
+    - "RTXA6000-8Q"
+  RTXA6000-6Q:
+    - "RTXA6000-6Q"
+  RTXA6000-4Q:
+    - "RTXA6000-4Q"
+  RTXA6000-3Q:
+    - "RTXA6000-3Q"
+  RTXA6000-2Q:
+    - "RTXA6000-2Q"
+  RTXA6000-1Q:
+    - "RTXA6000-1Q"
+
+  # NVIDIA RTX A6000, C-Series
+  RTXA6000-48C:
+    - "RTXA6000-48C"
+  RTXA6000-24C:
+    - "RTXA6000-24C"
+  RTXA6000-16C:
+    - "RTXA6000-16C"
+  RTXA6000-12C:
+    - "RTXA6000-12C"
+  RTXA6000-8C:
+    - "RTXA6000-8C"
+  RTXA6000-6C:
+    - "RTXA6000-6C"
+  RTXA6000-4C:
+    - "RTXA6000-4C"
+
+  # NVIDIA RTX A5500, Q-Series
+  RTXA5500-24Q:
+    - "RTXA5500-24Q"
+  RTXA5500-12Q:
+    - "RTXA5500-12Q"
+  RTXA5500-8Q:
+    - "RTXA5500-8Q"
+  RTXA5500-6Q:
+    - "RTXA5500-6Q"
+  RTXA5500-4Q:
+    - "RTXA5500-4Q"
+  RTXA5500-3Q:
+    - "RTXA5500-3Q"
+  RTXA5500-2Q:
+    - "RTXA5500-2Q"
+  RTXA5500-1Q:
+    - "RTXA5500-1Q"
+
+  # NVIDIA RTX A5500, C-Series
+  RTXA5500-24C:
+    - "RTXA5500-24C"
+  RTXA5500-12C:
+    - "RTXA5500-12C"
+  RTXA5500-8C:
+    - "RTXA5500-8C"
+  RTXA5500-6C:
+    - "RTXA5500-6C"
+  RTXA5500-4C:
+    - "RTXA5500-4C"
+
+  # NVIDIA RTX A5000, Q-Series
+  RTXA5000-24Q:
+    - "RTXA5000-24Q"
+  RTXA5000-12Q:
+    - "RTXA5000-12Q"
+  RTXA5000-8Q:
+    - "RTXA5000-8Q"
+  RTXA5000-6Q:
+    - "RTXA5000-6Q"
+  RTXA5000-4Q:
+    - "RTXA5000-4Q"
+  RTXA5000-3Q:
+    - "RTXA5000-3Q"
+  RTXA5000-2Q:
+    - "RTXA5000-2Q"
+  RTXA5000-1Q:
+    - "RTXA5000-1Q"
+
+  # NVIDIA RTX A5000, C-Series
+  RTXA5000-24C:
+    - "RTXA5000-24C"
+  RTXA5000-12C:
+    - "RTXA5000-12C"
+  RTXA5000-8C:
+    - "RTXA5000-8C"
+  RTXA5000-6C:
+    - "RTXA5000-6C"
+  RTXA5000-4C:
+    - "RTXA5000-4C"
+
+  # Tesla M60, Q-Series
+  M60-8Q:
+    - "M60-8Q"
+  M60-4Q:
+    - "M60-4Q"
+  M60-2Q:
+    - "M60-2Q"
+  M60-1Q:
+    - "M60-1Q"
+  M60-0Q:
+    - "M60-0Q"
+
+  # Tesla M10, Q-Series
+  M10-8Q:
+    - "M10-8Q"
+  M10-4Q:
+    - "M10-4Q"
+  M10-2Q:
+    - "M10-2Q"
+  M10-1Q:
+    - "M10-1Q"
+  M10-0Q:
+    - "M10-0Q"
+
+  # Tesla M6, Q-Series
+  M6-8Q:
+    - "M6-8Q"
+  M6-4Q:
+    - "M6-4Q"
+  M6-2Q:
+    - "M6-2Q"
+  M6-1Q:
+    - "M6-1Q"
+  M6-0Q:
+    - "M6-0Q"
+
+  # Tesla P100 PCIe 12 GB, Q-Series
+  P100C-12Q:
+    - "P100C-12Q"
+  P100C-6Q:
+    - "P100C-6Q"
+  P100C-4Q:
+    - "P100C-4Q"
+  P100C-2Q:
+    - "P100C-2Q"
+  P100C-1Q:
+    - "P100C-1Q"
+
+  # Tesla P100 PCIe 12 GB, C-Series
+  P100C-12C:
+    - "P100C-12C"
+  P100C-6C:
+    - "P100C-6C"
+  P100C-4C:
+    - "P100C-4C"
+
+  # Tesla P100 PCIe 16 GB, Q-Series
+  P100-16Q:
+    - "P100-16Q"
+  P100-8Q:
+    - "P100-8Q"
+  P100-4Q:
+    - "P100-4Q"
+  P100-2Q:
+    - "P100-2Q"
+  P100-1Q:
+    - "P100-1Q"
+
+  # Tesla P100 PCIe 16 GB, C-Series
+  P100-16C:
+    - "P100-16C"
+  P100-8C:
+    - "P100-8C"
+  P100-4C:
+    - "P100-4C"
+
+  # Tesla P100 SXM2, Q-Series
+  P100X-16Q:
+    - "P100X-16Q"
+  P100X-8Q:
+    - "P100X-8Q"
+  P100X-4Q:
+    - "P100X-4Q"
+  P100X-2Q:
+    - "P100X-2Q"
+  P100X-1Q:
+    - "P100X-1Q"
+
+  # Tesla P100 SXM2, C-Series
+  P100X-16C:
+    - "P100X-16C"
+  P100X-8C:
+    - "P100X-8C"
+  P100X-4C:
+    - "P100X-4C"
+
+  # Tesla P40, Q-Series
+  P40-24Q:
+    - "P40-24Q"
+  P40-12Q:
+    - "P40-12Q"
+  P40-8Q:
+    - "P40-8Q"
+  P40-6Q:
+    - "P40-6Q"
+  P40-4Q:
+    - "P40-4Q"
+  P40-3Q:
+    - "P40-3Q"
+  P40-2Q:
+    - "P40-2Q"
+  P40-1Q:
+    - "P40-1Q"
+
+  # Tesla P40, C-Series
+  P40-24C:
+    - "P40-24C"
+  P40-12C:
+    - "P40-12C"
+  P40-8C:
+    - "P40-8C"
+  P40-6C:
+    - "P40-6C"
+  P40-4C:
+    - "P40-4C"
+
+  # Tesla P6, Q-Series
+  P6-16Q:
+    - "P6-16Q"
+  P6-8Q:
+    - "P6-8Q"
+  P6-4Q:
+    - "P6-4Q"
+  P6-2Q:
+    - "P6-2Q"
+  P6-1Q:
+    - "P6-1Q"
+
+  # Tesla P6, C-Series
+  P6-16C:
+    - "P6-16C"
+  P6-8C:
+    - "P6-8C"
+  P6-4C:
+    - "P6-4C"
+
+  # Tesla P4, Q-Series
+  P4-8Q:
+    - "P4-8Q"
+  P4-4Q:
+    - "P4-4Q"
+  P4-2Q:
+    - "P4-2Q"
+  P4-1Q:
+    - "P4-1Q"
+
+  # Tesla P4, C-Series
+  P4-8C:
+    - "P4-8C"
+  P4-4C:
+    - "P4-4C"
+
+  # Tesla T4, Q-Series
+  T4-16Q:
     - "T4-16Q"
+  T4-8Q:
+    - "T4-8Q"
+  T4-4Q:
+    - "T4-4Q"
+  T4-2Q:
+    - "T4-2Q"
+  T4-1Q:
+    - "T4-1Q"
+
+  # Tesla T4, C-Series
+  T4-16C:
+    - "T4-16C"
+  T4-8C:
+    - "T4-8C"
+  T4-4C:
+    - "T4-4C"
+
+  # Tesla V100 SXM2, Q-Series
+  V100X-16Q:
+    - "V100X-16Q"
+  V100X-8Q:
+    - "V100X-8Q"
+  V100X-4Q:
+    - "V100X-4Q"
+  V100X-2Q:
+    - "V100X-2Q"
+  V100X-1Q:
+    - "V100X-1Q"
+
+  # Tesla V100 SXM2, C-Series
+  V100X-16C:
+    - "V100X-16C"
+  V100X-8C:
+    - "V100X-8C"
+  V100X-4C:
+    - "V100X-4C"
+
+  # Tesla V100 SXM2 32GB, Q-Series
+  V100DX-32Q:
+    - "V100DX-32Q"
+  V100DX-16Q:
+    - "V100DX-16Q"
+  V100DX-8Q:
+    - "V100DX-8Q"
+  V100DX-4Q:
+    - "V100DX-4Q"
+  V100DX-2Q:
+    - "V100DX-2Q"
+  V100DX-1Q:
+    - "V100DX-1Q"
+
+  # Tesla V100 SXM2 32GB, C-Series
+  V100DX-32C:
+    - "V100DX-32C"
+  V100DX-16C:
+    - "V100DX-16C"
+  V100DX-8C:
+    - "V100DX-8C"
+  V100DX-4C:
+    - "V100DX-4C"
+
+  # Tesla V100 PCIe, Q-Series
+  V100-16Q:
+    - "V100-16Q"
+  V100-8Q:
+    - "V100-8Q"
+  V100-4Q:
+    - "V100-4Q"
+  V100-2Q:
+    - "V100-2Q"
+  V100-1Q:
+    - "V100-1Q"
+
+  # Tesla V100 PCIe, C-Series
+  V100-16C:
+    - "V100-16C"
+  V100-8C:
+    - "V100-8C"
+  V100-4C:
+    - "V100-4C"
+
+  # Tesla V100 PCIe 32GB, Q-Series
+  V100D-32Q:
+    - "V100D-32Q"
+  V100D-16Q:
+    - "V100D-16Q"
+  V100D-8Q:
+    - "V100D-8Q"
+  V100D-4Q:
+    - "V100D-4Q"
+  V100D-2Q:
+    - "V100D-2Q"
+  V100D-1Q:
+    - "V100D-1Q"
+
+  # Tesla V100 PCIe 32GB, C-Series
+  V100D-32C:
+    - "V100D-32C"
+  V100D-16C:
+    - "V100D-16C"
+  V100D-8C:
+    - "V100D-8C"
+  V100D-4C:
+    - "V100D-4C"
+
+  # Tesla V100S PCIe 32GB, Q-Series
+  V100S-32Q:
+    - "V100S-32Q"
+  V100S-16Q:
+    - "V100S-16Q"
+  V100S-8Q:
+    - "V100S-8Q"
+  V100S-4Q:
+    - "V100S-4Q"
+  V100S-2Q:
+    - "V100S-2Q"
+  V100S-1Q:
+    - "V100S-1Q"
+
+  # Tesla V100S PCIe 32GB, C-Series
+  V100S-32C:
+    - "V100S-32C"
+  V100S-16C:
+    - "V100S-16C"
+  V100S-8C:
+    - "V100S-8C"
+  V100S-4C:
+    - "V100S-4C"
+
+  # Tesla V100 FHHL, Q-Series
+  V100L-16Q:
+    - "V100L-16Q"
+  V100L-8Q:
+    - "V100L-8Q"
+  V100L-4Q:
+    - "V100L-4Q"
+  V100L-2Q:
+    - "V100L-2Q"
+  V100L-1Q:
+    - "V100L-1Q"
+
+  # Tesla V100 FHHL, C-Series
+  V100L-16C:
+    - "V100L-16C"
+  V100L-8C:
+    - "V100L-8C"
+  V100L-4C:
+    - "V100L-4C"
+
+  # Quadro RTX 8000, Q-Series
+  RTX8000-48Q:
+    - "RTX8000-48Q"
+  RTX8000-24Q:
+    - "RTX8000-24Q"
+  RTX8000-16Q:
+    - "RTX8000-16Q"
+  RTX8000-12Q:
+    - "RTX8000-12Q"
+  RTX8000-8Q:
+    - "RTX8000-8Q"
+  RTX8000-6Q:
+    - "RTX8000-6Q"
+  RTX8000-4Q:
+    - "RTX8000-4Q"
+  RTX8000-3Q:
+    - "RTX8000-3Q"
+  RTX8000-2Q:
+    - "RTX8000-2Q"
+  RTX8000-1Q:
+    - "RTX8000-1Q"
+
+  # Quadro RTX 8000, C-Series
+  RTX8000-48C:
+    - "RTX8000-48C"
+  RTX8000-24C:
+    - "RTX8000-24C"
+  RTX8000-16C:
+    - "RTX8000-16C"
+  RTX8000-12C:
+    - "RTX8000-12C"
+  RTX8000-8C:
+    - "RTX8000-8C"
+  RTX8000-6C:
+    - "RTX8000-6C"
+  RTX8000-4C:
+    - "RTX8000-4C"
+
+  # Quadro RTX 8000 Passive, Q-Series
+  RTX8000P-48Q:
+    - "RTX8000P-48Q"
+  RTX8000P-24Q:
+    - "RTX8000P-24Q"
+  RTX8000P-16Q:
+    - "RTX8000P-16Q"
+  RTX8000P-12Q:
+    - "RTX8000P-12Q"
+  RTX8000P-8Q:
+    - "RTX8000P-8Q"
+  RTX8000P-6Q:
+    - "RTX8000P-6Q"
+  RTX8000P-4Q:
+    - "RTX8000P-4Q"
+  RTX8000P-3Q:
+    - "RTX8000P-3Q"
+  RTX8000P-2Q:
+    - "RTX8000P-2Q"
+  RTX8000P-1Q:
+    - "RTX8000P-1Q"
+
+  # Quadro RTX 8000 Passive, C-Series
+  RTX8000P-48C:
+    - "RTX8000P-48C"
+  RTX8000P-24C:
+    - "RTX8000P-24C"
+  RTX8000P-16C:
+    - "RTX8000P-16C"
+  RTX8000P-12C:
+    - "RTX8000P-12C"
+  RTX8000P-8C:
+    - "RTX8000P-8C"
+  RTX8000P-6C:
+    - "RTX8000P-6C"
+  RTX8000P-4C:
+    - "RTX8000P-4C"
+
+  # Quadro RTX 6000, Q-Series
+  RTX6000-24Q:
+    - "RTX6000-24Q"
+  RTX6000-12Q:
+    - "RTX6000-12Q"
+  RTX6000-8Q:
+    - "RTX6000-8Q"
+  RTX6000-6Q:
+    - "RTX6000-6Q"
+  RTX6000-4Q:
+    - "RTX6000-4Q"
+  RTX6000-3Q:
+    - "RTX6000-3Q"
+  RTX6000-2Q:
+    - "RTX6000-2Q"
+  RTX6000-1Q:
+    - "RTX6000-1Q"
+
+  # Quadro RTX 6000, C-Series
+  RTX6000-24C:
+    - "RTX6000-24C"
+  RTX6000-12C:
+    - "RTX6000-12C"
+  RTX6000-8C:
+    - "RTX6000-8C"
+  RTX6000-6C:
+    - "RTX6000-6C"
+  RTX6000-4C:
+    - "RTX6000-4C"
+
+  # Quadro RTX 6000 Passive, Q-Series
+  RTX6000P-24Q:
+    - "RTX6000P-24Q"
+  RTX6000P-12Q:
+    - "RTX6000P-12Q"
+  RTX6000P-8Q:
+    - "RTX6000P-8Q"
+  RTX6000P-6Q:
+    - "RTX6000P-6Q"
+  RTX6000P-4Q:
+    - "RTX6000P-4Q"
+  RTX6000P-3Q:
+    - "RTX6000P-3Q"
+  RTX6000P-2Q:
+    - "RTX6000P-2Q"
+  RTX6000P-1Q:
+    - "RTX6000P-1Q"
+
+  # Quadro RTX 6000 Passive, C-Series
+  RTX6000P-24C:
+    - "RTX6000P-24C"
+  RTX6000P-12C:
+    - "RTX6000P-12C"
+  RTX6000P-8C:
+    - "RTX6000P-8C"
+  RTX6000P-6C:
+    - "RTX6000P-6C"
+  RTX6000P-4C:
+    - "RTX6000P-4C"
