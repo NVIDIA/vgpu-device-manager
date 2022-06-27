@@ -29,43 +29,24 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
         - name: CONFIG_FILE
-          value: "/vgpu-config/config.yaml"
+          value: "/vgpu-devices-config/config.yaml"
+        - name: DEFAULT_VGPU_CONFIG
+          value: "default"
         securityContext:
           privileged: true
         volumeMounts:
-        - mountPath: /vgpu-config
-          name: vgpu-config
+        - mountPath: /vgpu-devices-config
+          name: vgpu-devices-config
         - mountPath: /sys
           name: host-sys
       volumes:
-      - name: vgpu-config
+      - name: vgpu-devices-config
         configMap:
-          name: vgpu-config
+          name: vgpu-devices-config
       - name: host-sys
         hostPath:
           path: /sys
           type: Directory
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: vgpu-config
-  namespace: default
-data:
-  config.yaml: |
-    version: v1
-    vgpu-configs:
-      default:
-        - A10-4C
-        - A10-8C
-      a10-full-profile:
-        - A10-24C
-      a10-small:
-        - A10-4C
-      a10-custom:
-        - A10-8C
-        - A10-12C
 
 ---
 apiVersion: v1
