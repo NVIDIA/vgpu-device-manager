@@ -11,11 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+ARG GOLANG_VERSION=1.17.13
+FROM golang:${GOLANG_VERSION}
 
-VERSION ?= v0.1.0
-
-vVERSION := v$(VERSION:v%=%)
-
-CUDA_VERSION := 11.6.1
-
-GOLANG_VERSION := 1.17.13
+RUN go get -u golang.org/x/lint/golint
+RUN go get -u github.com/matryer/moq
+RUN go get -u github.com/gordonklaus/ineffassign
+RUN go get -u github.com/client9/misspell/cmd/misspell
