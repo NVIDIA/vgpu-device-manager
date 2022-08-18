@@ -1,47 +1,47 @@
 # NVIDIA vGPU Device Manager
 
+**Note:** This project is under active development and not yet designed for production use. Use at your own risk.
+
 The `NVIDIA vGPU Device Manager` manages vGPU devices on a GPU node in a Kubernetes cluster.
 It defines a schema for declaratively specifying the list of vGPU types one would like to create on the node.
 The vGPU Device Manager parses this schema and applies the desired config by creating vGPU devices following steps outlined in the
 [NVIDIA vGPU User Guide](https://docs.nvidia.com/grid/latest/grid-vgpu-user-guide/index.html#creating-vgpu-device-red-hat-el-kvm).
 
-As an example, consider the following configuration for a node with NVIDIA A100 PCIe 40GB cards.
+As an example, consider the following configuration for a node with NVIDIA Tesla T4 GPUs.
 
 ```
 version: v1
 vgpu-configs:
   default:
-    - "A100-40C"
+    - "T4-8Q"
 
-  # NVIDIA A100 PCIe 40GB, C-Series
-  A100-40C:
-    - "A100-40C"
-  A100-20C:
-    - "A100-20C"
-  A100-10C:
-    - "A100-10C"
-  A100-8C:
-    - "A100-8C"
-  A100-5C:
-    - "A100-5C"
-  A100-4C:
-    - "A100-4C"
+  # NVIDIA Tesla T4, Q-Series
+  T4-16Q:
+    - "T4-16Q"
+  T4-8Q:
+    - "T4-8Q"
+  T4-4Q:
+    - "T4-4Q"
+  T4-2Q:
+    - "T4-2Q"
+  T4-1Q:
+    - "T4-1Q"
 
   # Custom configurations
-  A100-small:
-    - "A100-4C"
-    - "A100-5C"
-  A100-medium:
-    - "A100-8C"
-    - "A100-10C"
-  A100-large:
-    - "A100-20C"
-    - "A100-40C"
+  T4-small:
+    - "T4-1Q"
+    - "T4-2Q"
+  T4-medium:
+    - "T4-4Q"
+    - "T4-8Q"
+  T4-large:
+    - "T4-8Q"
+    - "T4-16Q"
 ```
 
-Each of the sections under `vgpu-configs` is user-defined, with custom labels used to refer to them. For example, the `A100-20C` label refers to the vGPU configuration that creates vGPU devices of type `A100-20C` on all GPUs on the node. Likewise, the `A100-4C` label refers to the vGPU configuration that creates vGPU devices of type `A100-4C` on all GPUs on the node.
+Each of the sections under `vgpu-configs` is user-defined, with custom labels used to refer to them. For example, the `T4-8Q` label refers to the vGPU configuration that creates vGPU devices of type `T4-8Q` on all T4 GPUs on the node. Likewise, the `T4-1Q` label refers to the vGPU configuration that creates vGPU devices of type `T4-1Q` on all T4 GPUs on the node.
 
-More than one vGPU type can be associated with a configuration. For example, the `A100-small` label specifies both the `A100-4C` and `A100-5C` vGPU types. If the node has multiple A100 cards, then vGPU devices of both types will be created on the node. More specifically, the vGPU Device Manager will select the vGPU types in a round robin fashion as it creates devices. vGPU devices of type `A100-4C` get created on the first card, vGPU devices of type `A100-5C` get created on the second card, vGPU devices of type `A100-4C` get created on the third card, etc.
+More than one vGPU type can be associated with a configuration. For example, the `T4-small` label specifies both the `T4-1Q` and `T4-2Q` vGPU types. If the node has multiple T4 cards, then vGPU devices of both types will be created on the node. More specifically, the vGPU Device Manager will select the vGPU types in a round robin fashion as it creates devices. vGPU devices of type `T4-1Q` get created on the first card, vGPU devices of type `T4-2Q` get created on the second card, vGPU devices of type `T4-1Q` get created on the third card, etc.
 
 ## Prerequisites
 
