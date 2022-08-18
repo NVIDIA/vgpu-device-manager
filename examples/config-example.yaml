@@ -4,46 +4,44 @@ vgpu-configs:
   # This config is meant to be a "fallback" if another config
   # is not specified.
   #
-  # The default vGPU types specified in this list are C-Series,
-  # unless the GPU does not support C-Series, and are the largest
-  # vGPU types for the corresponding GPU (i.e. for the A100 PCIe
-  # 40GB card, the "A100-40C" is selected).
+  # The default vGPU types specified in this list are Q-Series,
+  # unless the GPU does not support Q-Series.
   #
   # Virtual GPU Types reference:
   # https://docs.nvidia.com/grid/latest/grid-vgpu-user-guide/index.html#virtual-gpu-types-grid-reference
   default:
-    - "A100-40C"
-    - "A100X-40C"
-    - "A100D-80C"
+    - "A100-20C"
+    - "A100X-20C"
+    - "A100D-40C"
     - "A100DX-40C"
-    - "A40-48C"
-    - "A30-24C"
-    - "A16-16C"
-    - "A10-24C"
-    - "A2-16C"
-    - "RTX6000-48C"
-    - "RTX5500-24C"
-    - "RTX5000-24C"
-    - "M60-8Q"
-    - "M10-8Q"
-    - "M6-8Q"
-    - "P100C-12C"
-    - "P100-16C"
-    - "P100X-16C"
-    - "P40-24C"
-    - "P6-16C"
-    - "P4-8C"
-    - "T4-16C"
-    - "V100X-16C"
-    - "V100DX-32C"
-    - "V100-16C"
-    - "V100D-32C"
-    - "V100S-32C"
-    - "V100L-16C"
-    - "RTX8000-48C"
-    - "RTX8000P-48C"
-    - "RTX6000-24C"
-    - "RTX6000P-24C"
+    - "A40-24Q"
+    - "A30-12C"
+    - "A16-8Q"
+    - "A10-12Q"
+    - "A2-8Q"
+    - "RTXA6000-24Q"
+    - "RTXA5500-12Q"
+    - "RTXA5000-12Q"
+    - "M60-4Q"
+    - "M10-4Q"
+    - "M6-4Q"
+    - "P100C-6Q"
+    - "P100-8Q"
+    - "P100X-8Q"
+    - "P40-12Q"
+    - "P6-8Q"
+    - "P4-4Q"
+    - "T4-8Q"
+    - "V100X-8Q"
+    - "V100DX-16Q"
+    - "V100-8Q"
+    - "V100D-16Q"
+    - "V100S-16Q"
+    - "V100L-8Q"
+    - "RTX8000-24Q"
+    - "RTX8000P-24Q"
+    - "RTX6000-12Q"
+    - "RTX6000P-12Q"
 
   # NVIDIA A100 PCIe 40GB, C-Series
   A100-40C:
