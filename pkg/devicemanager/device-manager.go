@@ -70,7 +70,17 @@ func (m *VGPUDeviceManager) ApplyConfig(selectedConfig string) error {
 		return fmt.Errorf("%s is not a valid config", selectedConfig)
 	}
 
-	desiredTypes := m.config.VGPUConfigs[selectedConfig]
+	// TODO: the below is temporary until this package is re-implemented
+	// to properly consume the updated api spec.
+	desiredTypes := []string{}
+	for _, vgpuConfig := range m.config.VGPUConfigs[selectedConfig] {
+		if err := vgpuConfig.VGPUDevices.AssertValid(); err != nil {
+			return fmt.Errorf("config '%s' is malformed: %v", selectedConfig, err)
+		}
+		for k := range vgpuConfig.VGPUDevices {
+			desiredTypes = append(desiredTypes, k)
+		}
+	}
 	err := m.reconcileVGPUDevices(desiredTypes)
 	if err != nil {
 		return fmt.Errorf("%v", err)
@@ -166,7 +176,7 @@ func (m *VGPUDeviceManager) deleteAllVGPUDevices() error {
 	for _, device := range mdevs {
 		err := device.Delete()
 		if err != nil {
-			return fmt.Errorf("failed to delete mdev: %v\n", err)
+			return fmt.Errorf("failed to delete mdev: %v", err)
 		}
 		log.WithFields(log.Fields{
 			"vGPUType": device.MDEVType,
