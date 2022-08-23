@@ -45,11 +45,12 @@ func TestSpec(t *testing.T) {
 			`{
 				"version": "v1",
 				"vgpu-configs": {
-					"default": [
-						"A100-4C",
-						"A30-4C",
-						"T4-1Q",
-					]
+					"all-a100-4c": [{
+						"devices": "all",
+						"vgpu-devices": {
+							"A100-4C": 10
+						}
+					}]
 				}
 			}`,
 			false,
@@ -59,14 +60,18 @@ func TestSpec(t *testing.T) {
 			`{
 				"version": "v1",
 				"vgpu-configs": {
-					"default": [
-						"A100-4C",
-						"A30-4C",
-						"T4-1Q",
-					],
-					"a100-full-profile": [
-						"A100-24C",
-					]
+					"all-a100-4c": [{
+						"devices": "all",
+						"vgpu-devices": {
+							"A100-4C": 10
+						}
+					}],
+					"all-a100-5c": [{
+						"devices": "all",
+						"vgpu-devices": {
+							"A100-5C": 8
+						}
+					}]
 				}
 			}`,
 			false,
@@ -76,11 +81,12 @@ func TestSpec(t *testing.T) {
 			`{
 				"version": "v2",
 				"vgpu-configs": {
-					"default": [
-						"A100-4C",
-						"A30-4C",
-						"T4-1Q",
-					]
+					"all-a100-4c": [{
+						"devices": "all",
+						"vgpu-devices": {
+							"A100-4C": 10
+						}
+					}]
 				}
 			}`,
 			true,
@@ -89,11 +95,12 @@ func TestSpec(t *testing.T) {
 			"Missing version",
 			`{
 				"vgpu-configs": {
-					"default": [
-						"A100-4C",
-						"A30-4C",
-						"T4-1Q",
-					]
+					"all-a100-4c": [{
+						"devices": "all",
+						"vgpu-devices": {
+							"A100-4C": 10
+						}
+					}]
 				}
 			}`,
 			true,
@@ -104,11 +111,12 @@ func TestSpec(t *testing.T) {
 				"bogus": "field",
 				"version": "v1",
 				"vgpu-configs": {
-					"default": [
-						"A100-4C",
-						"A30-4C",
-						"T4-1Q",
-					]
+					"all-a100-4c": [{
+						"devices": "all",
+						"vgpu-devices": {
+							"A100-4C": 10
+						}
+					}]
 				}
 			}`,
 			true,
@@ -134,4 +142,90 @@ func TestSpec(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVGPUConfigSpec(t *testing.T) {
+	testCases := []struct {
+		Description     string
+		VGPUConfigSpec  string
+		expectedFailure bool
+	}{
+		{
+			"Empty",
+			"",
+			false,
+		},
+		{
+			"Well formed",
+			`{
+				"devices": "all",
+				"vgpu-devices": {
+					"A100-4C": 10
+				}
+			}`,
+			false,
+		},
+		{
+			"Well formed with multiple vGPU types",
+			`{
+				"devices": "all",
+				"vgpu-devices": {
+					"A100-4C": 5,
+					"A100-5C": 4
+				}
+			}`,
+			false,
+		},
+		{
+			"Well formed with filter",
+			`{
+				"device-filter": "MODEL",
+				"devices": "all",
+				"vgpu-devices": {
+					"A100-4C": 10
+				}
+			}`,
+			false,
+		},
+		{
+			"Erroneous field",
+			`{
+				"bogus": "field",
+				"devices": "all",
+				"vgpu-devices": {
+					"A100-4C": 10
+				}
+			}`,
+			true,
+		},
+		{
+			"Missing 'devices'",
+			`{
+				"vgpu-devices": {
+					"A100-4C": 10
+				}
+			}`,
+			true,
+		},
+		{
+			"Missing 'vgpu-devices'",
+			`{
+				"devices": "all"
+			}`,
+			true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Description, func(t *testing.T) {
+			s := VGPUConfigSpec{}
+			err := yaml.Unmarshal([]byte(tc.VGPUConfigSpec), &s)
+			if tc.expectedFailure {
+				require.NotNil(t, err, "Unexpected success yaml.Unmarshal")
+			} else {
+				require.Nil(t, err, "Unexpected failure yaml.Unmarshal")
+			}
+		})
+	}
+
 }
