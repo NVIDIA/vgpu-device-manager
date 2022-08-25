@@ -24,9 +24,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
+	"os/exec"
 
 	"context"
-	dm "gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/devicemanager"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +37,7 @@ import (
 )
 
 const (
+	cliName              = "nvidia-vgpu-dm"
 	resourceNodes        = "nodes"
 	vGPUConfigLabel      = "nvidia.com/vgpu.config"
 	vGPUConfigStateLabel = "nvidia.com/vgpu.config.state"
@@ -179,11 +180,6 @@ func start(c *cli.Context) error {
 		return fmt.Errorf("error building kubernetes clientset from config: %s", err)
 	}
 
-	m, err := dm.NewVGPUDeviceManager(configFileFlag)
-	if err != nil {
-		return fmt.Errorf("error creating new VGPUDeviceManager: %v", err)
-	}
-
 	vGPUConfig := NewSyncableVGPUConfig()
 
 	stop := continuouslySyncVGPUConfigChanges(clientset, vGPUConfig)
@@ -204,7 +200,7 @@ func start(c *cli.Context) error {
 	}
 
 	log.Infof("Updating to vGPU config: %s", selectedConfig)
-	err = updateConfig(clientset, m, selectedConfig)
+	err = updateConfig(clientset, selectedConfig)
 	if err != nil {
 		log.Errorf("ERROR: %v", err)
 	} else {
@@ -216,7 +212,7 @@ func start(c *cli.Context) error {
 		log.Infof("Waiting for change to '%s' label", vGPUConfigLabel)
 		value := vGPUConfig.Get()
 		log.Infof("Updating to vGPU config: %s", value)
-		err = updateConfig(clientset, m, value)
+		err = updateConfig(clientset, value)
 		if err != nil {
 			log.Errorf("ERROR: %v", err)
 			continue
@@ -254,17 +250,24 @@ func continuouslySyncVGPUConfigChanges(clientset *kubernetes.Clientset, vGPUConf
 	return stop
 }
 
-func updateConfig(clientset *kubernetes.Clientset, m *dm.VGPUDeviceManager, selectedConfig string) error {
+func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error {
 	defer setVGPUConfigStateLabel(clientset)
 	vGPUConfigState = "failed"
 
 	log.Info("Asserting that the requested configuration is present in the configuration file")
-	ok := m.AssertValidConfig(selectedConfig)
-	if !ok {
-		return fmt.Errorf("%s is not a valid config", selectedConfig)
+	err := assertValidConfig(selectedConfig)
+	if err != nil {
+		return fmt.Errorf("Unable to validate the selected vGPU configuration")
 	}
 
-	err := getNodeStateLabels(clientset)
+	log.Info("Checking if the selected vGPU device configuration is currently applied or not")
+	err = assertConfig(selectedConfig)
+	if err == nil {
+		vGPUConfigState = "success"
+		return nil
+	}
+
+	err = getNodeStateLabels(clientset)
 	if err != nil {
 		return fmt.Errorf("unable to get node state labels: %v", err)
 	}
@@ -281,7 +284,8 @@ func updateConfig(clientset *kubernetes.Clientset, m *dm.VGPUDeviceManager, sele
 		return fmt.Errorf("unable to shutdown gpu operands: %v", err)
 	}
 
-	err = m.ApplyConfig(selectedConfig)
+	log.Info("Applying the selected vGPU device configuration to the node")
+	err = applyConfig(selectedConfig)
 	if err != nil {
 		return fmt.Errorf("unable to apply config '%s': %v", selectedConfig, err)
 	}
@@ -294,6 +298,44 @@ func updateConfig(clientset *kubernetes.Clientset, m *dm.VGPUDeviceManager, sele
 
 	vGPUConfigState = "success"
 	return nil
+}
+
+func assertValidConfig(config string) error {
+	args := []string{
+		"assert",
+		"--valid-config",
+		"-f", configFileFlag,
+		"-c", config,
+	}
+	cmd := exec.Command(cliName, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func assertConfig(config string) error {
+	args := []string{
+		"assert",
+		"-f", configFileFlag,
+		"-c", config,
+	}
+	cmd := exec.Command(cliName, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func applyConfig(config string) error {
+	args := []string{
+		"-d",
+		"apply",
+		"-f", configFileFlag,
+		"-c", config,
+	}
+	cmd := exec.Command(cliName, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func getNodeStateLabels(clientset *kubernetes.Clientset) error {
