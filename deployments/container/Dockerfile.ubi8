@@ -21,13 +21,16 @@ FROM golang:${GOLANG_VERSION} AS build
 
 WORKDIR /build
 COPY . .
-RUN GOOS=linux go build -o /artifacts/vgpu-device-manager .
+RUN GOOS=linux go build -o /artifacts/nvidia-vgpu-dm ./cmd/nvidia-vgpu-dm
+RUN GOOS=linux go build -o /artifacts/k8s-nvidia-vgpu-dm ./deployments/container/
+
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-base-${BASE_DIST}
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
-COPY --from=build /artifacts/vgpu-device-manager /usr/bin/vgpu-device-manager
+COPY --from=build /artifacts/nvidia-vgpu-dm /usr/bin/nvidia-vgpu-dm
+COPY --from=build /artifacts/k8s-nvidia-vgpu-dm /usr/bin/k8s-nvidia-vgpu-dm
 
 LABEL version="${VERSION}"
 LABEL release="N/A"
@@ -45,4 +48,4 @@ RUN if [ -n "${CVE_UPDATES}" ]; then \
         rm -rf /var/cache/yum/*; \
     fi
 
-ENTRYPOINT ["vgpu-device-manager"]
+ENTRYPOINT ["k8s-nvidia-vgpu-dm"]
