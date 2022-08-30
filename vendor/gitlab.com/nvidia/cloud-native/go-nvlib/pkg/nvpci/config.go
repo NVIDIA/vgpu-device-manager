@@ -18,7 +18,7 @@ package nvpci
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvpci/bytes"
 )
@@ -71,7 +71,7 @@ type PCICapabilities struct {
 }
 
 func (cs *ConfigSpace) Read() (ConfigSpaceIO, error) {
-	config, err := ioutil.ReadFile(cs.Path)
+	config, err := os.ReadFile(cs.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %v", err)
 	}
