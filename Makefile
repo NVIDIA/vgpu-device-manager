@@ -21,6 +21,9 @@ include $(CURDIR)/versions.mk
 BUILDIMAGE_TAG ?= golang$(GOLANG_VERSION)
 BUILDIMAGE ?= vgpu-device-manager-build
 
+CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
+CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
+
 CHECK_TARGETS := assert-fmt vet lint ineffassign misspell
 MAKE_TARGETS := binaries build check fmt lint-internal test examples cmds coverage generate $(CHECK_TARGETS)
 
@@ -30,6 +33,10 @@ DOCKER_TARGETS := $(patsubst %, docker-%, $(TARGETS))
 .PHONY: $(TARGETS) $(DOCKER_TARGETS)
 
 GOOS := linux
+
+cmds: $(CMD_TARGETS)
+$(CMD_TARGETS): cmd-%:
+	GOOS=$(GOOS) go build -ldflags "-s -w" $(COMMAND_BUILD_OPTIONS) $(MODULE)/cmd/$(*)
 
 build:
 	GOOS=$(GOOS) go build $(MODULE)/...

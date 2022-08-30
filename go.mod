@@ -7,7 +7,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.6.0
-	gitlab.com/nvidia/cloud-native/go-nvlib v0.0.0-20220525163429-038b3f8b475d
+	gitlab.com/nvidia/cloud-native/go-nvlib v0.0.0-20220826162404-7e23240abba5
 	k8s.io/api v0.24.0
 	k8s.io/apimachinery v0.24.0
 	k8s.io/client-go v0.24.0
@@ -56,5 +56,3 @@ require (
 	sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 )
-
-//replace gitlab.com/nvidia/cloud-native/go-nvlib => /Users/cdesiniotis/git/go-nvlib
