@@ -132,9 +132,6 @@ scan-ubi8-amd64:
     OUT_REGISTRY_TOKEN: "${NGC_REGISTRY_TOKEN}"
     OUT_REGISTRY: "${NGC_REGISTRY}"
     OUT_IMAGE_NAME: "${NGC_REGISTRY_IMAGE}"
-    # Disable external releases for now
-    DOCKER: echo docker
-    REGCTL: echo regctl
 
 # Define the external release targets
 # Release to NGC
