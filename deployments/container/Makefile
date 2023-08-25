@@ -75,13 +75,15 @@ build-%: DOCKERFILE = $(CURDIR)/deployments/container/Dockerfile.$(DOCKERFILE_SU
 # Both ubi8 and build-ubi8 trigger a build of the relevant image
 $(DISTRIBUTIONS): %: build-%
 $(BUILD_TARGETS): build-%:
+	ifneq ($(DOCKER_BUILD_NETWORK_OPTIONS),)
 	$(DOCKER) $(BUILDX) create --use --name network-host --driver-opt network=host \
 		--buildkitd-flags '--allow-insecure-entitlement network.host'
+	endif
 	DOCKER_BUILDKIT=1 \
 		$(DOCKER) $(BUILDX) build --pull \
 			$(DOCKER_BUILD_OPTIONS) \
 			$(DOCKER_BUILD_PLATFORM_OPTIONS) \
-			--allow network.host \
+			$(DOCKER_BUILD_NETWORK_OPTIONS) \
 			--tag $(IMAGE) \
 			--build-arg BASE_DIST="$(DIST)" \
 			--build-arg CUDA_VERSION="$(CUDA_VERSION)" \
