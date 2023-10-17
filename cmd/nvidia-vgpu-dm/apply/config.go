@@ -25,8 +25,8 @@ import (
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/vgpu"
 )
 
-// ApplyVGPUConfig applies the selected vGPU config to the node
-func ApplyVGPUConfig(c *Context) error {
+// VGPUConfig applies the selected vGPU config to the node
+func VGPUConfig(c *Context) error {
 	return assert.WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
 		configManager := vgpu.NewNvlibVGPUConfigManager()
 		current, err := configManager.GetVGPUConfig(i)

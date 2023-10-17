@@ -81,13 +81,13 @@ func CheckFlags(f *Flags) error {
 // AssertVGPUConfig reuses calls from the 'assert' subcommand to check if the vGPU devices of a particular vGPU config are currently applied.
 // The 'VGPUConfig' being checked is embedded in the 'Context' struct itself.
 func (c *Context) AssertVGPUConfig() error {
-	return assert.AssertVGPUConfig(&c.Context)
+	return assert.VGPUConfig(&c.Context)
 }
 
 // ApplyVGPUConfig applies a particular vGPU config to the node.
 // The 'VGPUConfig' being applied is embedded in the 'Context' struct itself.
 func (c *Context) ApplyVGPUConfig() error {
-	return ApplyVGPUConfig(c)
+	return VGPUConfig(c)
 }
 
 func applyWrapper(c *cli.Context, f *Flags) error {
