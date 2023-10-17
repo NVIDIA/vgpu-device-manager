@@ -25,8 +25,8 @@ import (
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/vgpu"
 )
 
-// AssertVGPUConfig asserts that the selected vGPU config is applied to the node
-func AssertVGPUConfig(c *Context) error {
+// VGPUConfig asserts that the selected vGPU config is applied to the node
+func VGPUConfig(c *Context) error {
 	nvpci := nvpci.New()
 	gpus, err := nvpci.GetGPUs()
 	if err != nil {
