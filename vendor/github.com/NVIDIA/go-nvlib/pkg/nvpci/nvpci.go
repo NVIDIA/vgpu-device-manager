@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/NVIDIA/go-nvlib/pkg/pciids"
 )
 
 const (
@@ -37,6 +39,10 @@ const (
 	PCI3dControllerClass uint32 = 0x030200
 	// PCINvSwitchClass represents the PCI class for NVSwitches
 	PCINvSwitchClass uint32 = 0x068000
+	// UnknownDeviceString is the device name to set for devices not found in the PCI database
+	UnknownDeviceString = "UNKNOWN_DEVICE"
+	// UnknownClassString is the class name to set for devices not found in the PCI database
+	UnknownClassString = "UNKNOWN_CLASS"
 )
 
 // Interface allows us to get a list of all NVIDIA PCI devices
@@ -47,6 +53,10 @@ type Interface interface {
 	GetNVSwitches() ([]*NvidiaPCIDevice, error)
 	GetGPUs() ([]*NvidiaPCIDevice, error)
 	GetGPUByIndex(int) (*NvidiaPCIDevice, error)
+	GetGPUByPciBusID(string) (*NvidiaPCIDevice, error)
+	GetNetworkControllers() ([]*NvidiaPCIDevice, error)
+	GetPciBridges() ([]*NvidiaPCIDevice, error)
+	GetDPUs() ([]*NvidiaPCIDevice, error)
 }
 
 // MemoryResources a more human readable handle
@@ -58,7 +68,9 @@ type ResourceInterface interface {
 }
 
 type nvpci struct {
+	logger         logger
 	pciDevicesRoot string
+	pcidbPath      string
 }
 
 var _ Interface = (*nvpci)(nil)
@@ -70,7 +82,9 @@ type NvidiaPCIDevice struct {
 	Address    string
 	Vendor     uint16
 	Class      uint32
+	ClassName  string
 	Device     uint16
+	DeviceName string
 	Driver     string
 	IommuGroup int
 	NumaNode   int
@@ -116,13 +130,44 @@ func (d *NvidiaPCIDevice) Reset() error {
 }
 
 // New interface that allows us to get a list of all NVIDIA PCI devices
-func New() Interface {
-	return &nvpci{PCIDevicesRoot}
+func New(opts ...Option) Interface {
+	n := &nvpci{}
+	for _, opt := range opts {
+		opt(n)
+	}
+	if n.logger == nil {
+		n.logger = &simpleLogger{}
+	}
+	if n.pciDevicesRoot == "" {
+		n.pciDevicesRoot = PCIDevicesRoot
+	}
+	return n
 }
 
-// NewFrom interface allows us to get a list of all NVIDIA PCI devices at a specific root directory
-func NewFrom(root string) Interface {
-	return &nvpci{root}
+// Option defines a function for passing options to the New() call
+type Option func(*nvpci)
+
+// WithLogger provides an Option to set the logger for the library
+func WithLogger(logger logger) Option {
+	return func(n *nvpci) {
+		n.logger = logger
+	}
+}
+
+// WithPCIDevicesRoot provides an Option to set the root path
+// for PCI devices on the system.
+func WithPCIDevicesRoot(root string) Option {
+	return func(n *nvpci) {
+		n.pciDevicesRoot = root
+	}
+}
+
+// WithPCIDatabasePath provides an Option to set the path
+// to the pciids database file.
+func WithPCIDatabasePath(path string) Option {
+	return func(n *nvpci) {
+		n.pcidbPath = path
+	}
 }
 
 // GetAllDevices returns all Nvidia PCI devices on the system
@@ -134,10 +179,10 @@ func (p *nvpci) GetAllDevices() ([]*NvidiaPCIDevice, error) {
 
 	var nvdevices []*NvidiaPCIDevice
 	for _, deviceDir := range deviceDirs {
-		devicePath := path.Join(p.pciDevicesRoot, deviceDir.Name())
-		nvdevice, err := NewDevice(devicePath)
+		deviceAddress := deviceDir.Name()
+		nvdevice, err := p.GetGPUByPciBusID(deviceAddress)
 		if err != nil {
-			return nil, fmt.Errorf("error constructing NVIDIA PCI device %s: %v", deviceDir.Name(), err)
+			return nil, fmt.Errorf("error constructing NVIDIA PCI device %s: %v", deviceAddress, err)
 		}
 		if nvdevice == nil {
 			continue
@@ -159,9 +204,9 @@ func (p *nvpci) GetAllDevices() ([]*NvidiaPCIDevice, error) {
 	return nvdevices, nil
 }
 
-// NewDevice constructs an NvidiaPCIDevice
-func NewDevice(devicePath string) (*NvidiaPCIDevice, error) {
-	address := path.Base(devicePath)
+// GetGPUByPciBusID constructs an NvidiaPCIDevice for the specified address (PCI Bus ID)
+func (p *nvpci) GetGPUByPciBusID(address string) (*NvidiaPCIDevice, error) {
+	devicePath := filepath.Join(p.pciDevicesRoot, address)
 
 	vendor, err := os.ReadFile(path.Join(devicePath, "vendor"))
 	if err != nil {
@@ -173,7 +218,7 @@ func NewDevice(devicePath string) (*NvidiaPCIDevice, error) {
 		return nil, fmt.Errorf("unable to convert vendor string to uint16: %v", vendorStr)
 	}
 
-	if uint16(vendorID) != PCINvidiaVendorID {
+	if uint16(vendorID) != PCINvidiaVendorID && uint16(vendorID) != PCIMellanoxVendorID {
 		return nil, nil
 	}
 
@@ -270,6 +315,19 @@ func NewDevice(devicePath string) (*NvidiaPCIDevice, error) {
 		}
 	}
 
+	pciDB := pciids.NewDB()
+
+	deviceName, err := pciDB.GetDeviceName(uint16(vendorID), uint16(deviceID))
+	if err != nil {
+		p.logger.Warningf("unable to get device name: %v\n", err)
+		deviceName = UnknownDeviceString
+	}
+	className, err := pciDB.GetClassName(uint32(classID))
+	if err != nil {
+		p.logger.Warningf("unable to get class name for device: %v\n", err)
+		className = UnknownClassString
+	}
+
 	nvdevice := &NvidiaPCIDevice{
 		Path:       devicePath,
 		Address:    address,
@@ -282,6 +340,8 @@ func NewDevice(devicePath string) (*NvidiaPCIDevice, error) {
 		Config:     config,
 		Resources:  resources,
 		IsVF:       isVF,
+		DeviceName: deviceName,
+		ClassName:  className,
 	}
 
 	return nvdevice, nil

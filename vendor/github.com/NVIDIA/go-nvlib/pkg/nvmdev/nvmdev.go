@@ -18,13 +18,14 @@ package nvmdev
 
 import (
 	"fmt"
-	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvpci"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 )
 
 const (
@@ -241,7 +242,7 @@ func (m mdev) iommuGroup() (int, error) {
 
 // NewParentDevice constructs a ParentDevice
 func NewParentDevice(devicePath string) (*ParentDevice, error) {
-	nvdevice, err := nvpci.NewDevice(devicePath)
+	nvdevice, err := newNvidiaPCIDeviceFromPath(devicePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct NVIDIA PCI device: %v", err)
 	}
@@ -330,7 +331,7 @@ func (p *ParentDevice) GetPhysicalFunction() (*nvpci.NvidiaPCIDevice, error) {
 		return nil, fmt.Errorf("unable to resolve %s: %v", path.Join(p.Path, "physfn"), err)
 	}
 
-	return nvpci.NewDevice(physfnPath)
+	return newNvidiaPCIDeviceFromPath(physfnPath)
 }
 
 // GetPhysicalFunction gets the physical PCI device that a vGPU is created on
@@ -373,4 +374,13 @@ func (p *ParentDevice) GetAvailableMDEVInstances(mdevType string) (int, error) {
 	}
 
 	return availableInstances, nil
+}
+
+// newNvidiaPCIDeviceFromPath constructs an NvidiaPCIDevice for the specified device path.
+func newNvidiaPCIDeviceFromPath(devicePath string) (*nvpci.NvidiaPCIDevice, error) {
+	root := filepath.Dir(devicePath)
+	address := filepath.Base(devicePath)
+	return nvpci.New(
+		nvpci.WithPCIDevicesRoot(root),
+	).GetGPUByPciBusID(address)
 }

@@ -22,9 +22,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
-	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvpci"
 	v1 "gitlab.com/nvidia/cloud-native/vgpu-device-manager/api/spec/v1"
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
 	"sigs.k8s.io/yaml"
