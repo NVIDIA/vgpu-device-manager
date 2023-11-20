@@ -3,11 +3,11 @@ module gitlab.com/nvidia/cloud-native/vgpu-device-manager
 go 1.20
 
 require (
+	github.com/NVIDIA/go-nvlib v0.0.0-20231116150931-9fd385bace0d
 	github.com/google/uuid v1.3.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.4
 	github.com/urfave/cli/v2 v2.6.0
-	gitlab.com/nvidia/cloud-native/go-nvlib v0.0.0-20220826162404-7e23240abba5
 	k8s.io/api v0.24.0
 	k8s.io/apimachinery v0.24.0
 	k8s.io/client-go v0.24.0

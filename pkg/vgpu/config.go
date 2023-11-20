@@ -19,8 +19,8 @@ package vgpu
 import (
 	"fmt"
 
+	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/google/uuid"
-	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvmdev"
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/internal/nvlib"
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
 )

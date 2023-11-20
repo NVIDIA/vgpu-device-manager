@@ -17,8 +17,8 @@
 package nvlib
 
 import (
-	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvmdev"
-	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvpci"
+	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 )
 
 // Interface provides the API to the nvlib package

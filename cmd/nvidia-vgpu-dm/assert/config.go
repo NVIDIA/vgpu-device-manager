@@ -19,7 +19,7 @@ package assert
 import (
 	"fmt"
 
-	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvpci"
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	v1 "gitlab.com/nvidia/cloud-native/vgpu-device-manager/api/spec/v1"
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/vgpu"
