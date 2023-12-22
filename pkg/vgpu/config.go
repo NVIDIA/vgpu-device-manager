@@ -21,6 +21,7 @@ import (
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/google/uuid"
+
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/internal/nvlib"
 	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
 )
@@ -92,6 +93,10 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 		if pf.Address == device.Address {
 			parents = append(parents, p)
 		}
+	}
+
+	if len(parents) == 0 {
+		return fmt.Errorf("no parent devices found for GPU at index '%d'", gpu)
 	}
 
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
