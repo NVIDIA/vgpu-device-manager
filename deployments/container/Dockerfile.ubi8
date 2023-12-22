@@ -14,8 +14,6 @@
 
 ARG BASE_DIST=ubi8
 ARG CUDA_VERSION
-ARG GOLANG_VERSION=x.x.x
-ARG VERSION="N/A"
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-base-${BASE_DIST} as build
 
@@ -39,6 +37,8 @@ ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
 
 WORKDIR /build
 COPY . .
+ARG VERSION="N/A"
+ARG GIT_COMMIT="unknown"
 RUN make PREFIX=/artifacts cmds
 
 
