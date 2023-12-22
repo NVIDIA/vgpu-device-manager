@@ -34,9 +34,13 @@ DOCKER_TARGETS := $(patsubst %, docker-%, $(TARGETS))
 
 GOOS := linux
 
+ifneq ($(PREFIX),)
+cmd-%: COMMAND_BUILD_OPTIONS = -o $(PREFIX)/$(*)
+endif
+
 cmds: $(CMD_TARGETS)
 $(CMD_TARGETS): cmd-%:
-	GOOS=$(GOOS) go build -ldflags "-s -w" $(COMMAND_BUILD_OPTIONS) $(MODULE)/cmd/$(*)
+	GOOS=$(GOOS) go build -ldflags "-s -w -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) -X $(VERSION_PKG).version=$(VERSION)" $(COMMAND_BUILD_OPTIONS) $(MODULE)/cmd/$(*)
 
 build:
 	GOOS=$(GOOS) go build $(MODULE)/...
