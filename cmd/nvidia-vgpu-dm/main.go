@@ -21,8 +21,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/cmd/nvidia-vgpu-dm/apply"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
+
+	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/apply"
+	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
 )
 
 // Flags represents the top level flags that can be passed to the vgpu-dm CLI

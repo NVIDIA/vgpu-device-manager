@@ -19,7 +19,8 @@ package v1
 import (
 	"encoding/json"
 	"fmt"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
+
+	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
 // Version indicates the version of the 'Spec' struct used to hold information on 'VGPUConfigs'.

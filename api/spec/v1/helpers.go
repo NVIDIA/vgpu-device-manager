@@ -17,7 +17,7 @@
 package v1
 
 import (
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
 // MatchesDeviceFilter checks a 'VGPUConfigSpec' to see if its device filter matches the provided 'deviceID'.
