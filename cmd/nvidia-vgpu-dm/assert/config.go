@@ -20,9 +20,10 @@ import (
 	"fmt"
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
-	v1 "gitlab.com/nvidia/cloud-native/vgpu-device-manager/api/spec/v1"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/vgpu"
+
+	v1 "github.com/NVIDIA/vgpu-device-manager/api/spec/v1"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/vgpu"
 )
 
 // VGPUConfig asserts that the selected vGPU config is applied to the node

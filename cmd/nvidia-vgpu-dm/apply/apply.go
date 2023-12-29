@@ -21,7 +21,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
+
+	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
 )
 
 var log = logrus.New()

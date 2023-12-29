@@ -22,8 +22,8 @@ import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/google/uuid"
 
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/internal/nvlib"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
+	"github.com/NVIDIA/vgpu-device-manager/internal/nvlib"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
 // Manager represents a set of functions for managing vGPU configurations on a node

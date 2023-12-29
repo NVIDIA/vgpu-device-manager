@@ -19,10 +19,10 @@ package apply
 import (
 	"fmt"
 
-	v1 "gitlab.com/nvidia/cloud-native/vgpu-device-manager/api/spec/v1"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/vgpu"
+	v1 "github.com/NVIDIA/vgpu-device-manager/api/spec/v1"
+	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/vgpu"
 )
 
 // VGPUConfig applies the selected vGPU config to the node

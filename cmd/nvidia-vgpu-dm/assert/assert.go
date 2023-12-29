@@ -25,9 +25,10 @@ import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
-	v1 "gitlab.com/nvidia/cloud-native/vgpu-device-manager/api/spec/v1"
-	"gitlab.com/nvidia/cloud-native/vgpu-device-manager/pkg/types"
 	"sigs.k8s.io/yaml"
+
+	v1 "github.com/NVIDIA/vgpu-device-manager/api/spec/v1"
+	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
 var log = logrus.New()

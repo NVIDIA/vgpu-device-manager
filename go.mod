@@ -1,4 +1,4 @@
-module gitlab.com/nvidia/cloud-native/vgpu-device-manager
+module github.com/NVIDIA/vgpu-device-manager
 
 go 1.20
 
