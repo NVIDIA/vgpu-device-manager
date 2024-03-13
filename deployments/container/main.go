@@ -18,22 +18,24 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+
 	log "github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
-	"os/exec"
 
 	"context"
+	"sync"
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"sync"
-	"time"
 )
 
 const (
@@ -54,7 +56,6 @@ var (
 
 	pluginDeployed    string
 	validatorDeployed string
-	vGPUConfigState   string
 )
 
 // SyncableVGPUConfig is used to synchronize on changes to a configuration value.
@@ -202,10 +203,13 @@ func start(c *cli.Context) error {
 	log.Infof("Updating to vGPU config: %s", selectedConfig)
 	err = updateConfig(clientset, selectedConfig)
 	if err != nil {
-		log.Errorf("ERROR: %v", err)
+		log.Errorf("Failed to apply vGPU config: %v", err)
 	} else {
 		log.Infof("Successfully updated to vGPU config: %s", selectedConfig)
 	}
+	vGPUConfigStateValue := getVGPUConfigStateValue(err)
+	log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
+	setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
 
 	// Watch for configuration changes
 	for {
@@ -214,10 +218,13 @@ func start(c *cli.Context) error {
 		log.Infof("Updating to vGPU config: %s", value)
 		err = updateConfig(clientset, value)
 		if err != nil {
-			log.Errorf("ERROR: %v", err)
-			continue
+			log.Errorf("Failed to apply vGPU config: %v", err)
+		} else {
+			log.Infof("Successfully updated to vGPU config: %s", value)
 		}
-		log.Infof("Successfuly updated to vGPU config: %s", value)
+		vGPUConfigStateValue = getVGPUConfigStateValue(err)
+		log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
+		setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
 	}
 }
 
@@ -251,8 +258,6 @@ func continuouslySyncVGPUConfigChanges(clientset *kubernetes.Clientset, vGPUConf
 }
 
 func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error {
-	defer setVGPUConfigStateLabel(clientset)
-	vGPUConfigState = "failed"
 
 	log.Info("Asserting that the requested configuration is present in the configuration file")
 	err := assertValidConfig(selectedConfig)
@@ -263,7 +268,6 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 	log.Info("Checking if the selected vGPU device configuration is currently applied or not")
 	err = assertConfig(selectedConfig)
 	if err == nil {
-		vGPUConfigState = "success"
 		return nil
 	}
 
@@ -272,7 +276,7 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 		return fmt.Errorf("unable to get node state labels: %v", err)
 	}
 
-	log.Infof("Changing the '%s' node label to 'pending'", vGPUConfigStateLabel)
+	log.Infof("Setting node label: %s=pending", vGPUConfigStateLabel)
 	err = setNodeLabelValue(clientset, vGPUConfigStateLabel, "pending")
 	if err != nil {
 		return fmt.Errorf("error setting vGPU config state label: %v", err)
@@ -296,7 +300,6 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 		return fmt.Errorf("unable to reschedule gpu operands: %v", err)
 	}
 
-	vGPUConfigState = "success"
 	return nil
 }
 
@@ -338,6 +341,13 @@ func applyConfig(config string) error {
 	return cmd.Run()
 }
 
+func getVGPUConfigStateValue(err error) string {
+	if err != nil {
+		return "failed"
+	}
+	return "success"
+}
+
 func getNodeStateLabels(clientset *kubernetes.Clientset) error {
 	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
 	if err != nil {
@@ -352,10 +362,6 @@ func getNodeStateLabels(clientset *kubernetes.Clientset) error {
 	log.Infof("Getting current value of '%s' node label", validatorStateLabel)
 	validatorDeployed = labels[validatorStateLabel]
 	log.Infof("Current value of '%s=%s'", validatorStateLabel, validatorDeployed)
-
-	log.Infof("Getting current value of '%s' node label", vGPUConfigStateLabel)
-	vGPUConfigState = labels[vGPUConfigStateLabel]
-	log.Infof("Current value of '%s=%s'", vGPUConfigStateLabel, vGPUConfigState)
 
 	return nil
 }
@@ -439,16 +445,6 @@ func rescheduleGPUOperands(clientset *kubernetes.Clientset) error {
 	_, err = clientset.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to update node object: %v", err)
-	}
-
-	return nil
-}
-
-func setVGPUConfigStateLabel(clientset *kubernetes.Clientset) error {
-	log.Infof("Changing the '%s' node label to '%s'", vGPUConfigStateLabel, vGPUConfigState)
-	err := setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigState)
-	if err != nil {
-		return fmt.Errorf("error setting vGPU config state label: %v", err)
 	}
 
 	return nil
