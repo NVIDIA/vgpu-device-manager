@@ -24,6 +24,7 @@ import (
 
 	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/apply"
 	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
+	"github.com/NVIDIA/vgpu-device-manager/internal/info"
 )
 
 // Flags represents the top level flags that can be passed to the vgpu-dm CLI
@@ -37,7 +38,7 @@ func main() {
 	c := cli.NewApp()
 	c.Name = "nvidia-vgpu-dm"
 	c.Usage = "Manage NVIDIA vGPU devices"
-	c.Version = "0.2.0"
+	c.Version = info.GetVersionString()
 
 	c.Flags = []cli.Flag{
 		&cli.BoolFlag{
@@ -65,6 +66,8 @@ func main() {
 		applyLog.SetLevel(logLevel)
 		return nil
 	}
+
+	log.Infof("version: %s", c.Version)
 
 	err := c.Run(os.Args)
 	if err != nil {

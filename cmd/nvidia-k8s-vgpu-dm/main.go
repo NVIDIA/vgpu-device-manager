@@ -36,6 +36,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/NVIDIA/vgpu-device-manager/internal/info"
 )
 
 const (
@@ -101,8 +103,10 @@ func (m *SyncableVGPUConfig) Get() string {
 
 func main() {
 	c := cli.NewApp()
+	c.Name = "nvidia-k8s-vgpu-dm"
 	c.Before = validateFlags
 	c.Action = start
+	c.Version = info.GetVersionString()
 
 	c.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -145,6 +149,8 @@ func main() {
 			EnvVars:     []string{"DEFAULT_VGPU_CONFIG"},
 		},
 	}
+
+	log.Infof("version: %s", c.Version)
 
 	err := c.Run(os.Args)
 	if err != nil {
