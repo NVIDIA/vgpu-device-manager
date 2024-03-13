@@ -46,7 +46,7 @@ func (v VGPUConfig) AssertValid() error {
 				return fmt.Errorf("cannot mix time-sliced and MIG-backed vGPU devices on the same GPU")
 			}
 			migBacked = true
-		} else {
+		} else if vgpuType.G <= 0 {
 			if idx > 0 && migBacked {
 				return fmt.Errorf("cannot mix time-sliced and MIG-backed vGPU devices on the same GPU")
 			}

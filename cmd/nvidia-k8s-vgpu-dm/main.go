@@ -215,7 +215,7 @@ func start(c *cli.Context) error {
 	}
 	vGPUConfigStateValue := getVGPUConfigStateValue(err)
 	log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
-	setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
+	_ = setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
 
 	// Watch for configuration changes
 	for {
@@ -230,7 +230,7 @@ func start(c *cli.Context) error {
 		}
 		vGPUConfigStateValue = getVGPUConfigStateValue(err)
 		log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
-		setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
+		_ = setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
 	}
 }
 
@@ -268,7 +268,7 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 	log.Info("Asserting that the requested configuration is present in the configuration file")
 	err := assertValidConfig(selectedConfig)
 	if err != nil {
-		return fmt.Errorf("Unable to validate the selected vGPU configuration")
+		return fmt.Errorf("unable to validate the selected vGPU configuration")
 	}
 
 	log.Info("Checking if the selected vGPU device configuration is currently applied or not")
@@ -414,8 +414,10 @@ func shutdownGPUOperands(clientset *kubernetes.Clientset) error {
 }
 
 func waitForPodDeletion(clientset *kubernetes.Clientset, listOpts metav1.ListOptions) error {
-	pollFunc := func() (bool, error) {
-		podList, err := clientset.CoreV1().Pods(namespaceFlag).List(context.TODO(), listOpts)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pollFunc := func(context.Context) (bool, error) {
+		podList, err := clientset.CoreV1().Pods(namespaceFlag).List(ctx, listOpts)
 		if apierrors.IsNotFound(err) {
 			log.Infof("Pod was already deleted")
 			return true, nil
@@ -429,9 +431,9 @@ func waitForPodDeletion(clientset *kubernetes.Clientset, listOpts metav1.ListOpt
 		return false, nil
 	}
 
-	err := wait.PollImmediate(1*time.Second, 120*time.Second, pollFunc)
+	err := wait.PollUntilContextCancel(ctx, 1*time.Second, true, pollFunc)
 	if err != nil {
-		return fmt.Errorf("Error deleting pod: %v", err)
+		return fmt.Errorf("error deleting pod: %v", err)
 	}
 
 	return nil
