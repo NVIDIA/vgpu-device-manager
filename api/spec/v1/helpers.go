@@ -48,8 +48,7 @@ func (vs *VGPUConfigSpec) MatchesDeviceFilter(deviceID types.DeviceID) bool {
 
 // MatchesAllDevices checks a 'VGPUConfigSpec' to see if it matches on 'all' devices.
 func (vs *VGPUConfigSpec) MatchesAllDevices() bool {
-	switch devices := vs.Devices.(type) {
-	case string:
+	if devices, ok := vs.Devices.(string); ok {
 		return devices == "all"
 	}
 	return false
@@ -57,13 +56,13 @@ func (vs *VGPUConfigSpec) MatchesAllDevices() bool {
 
 // MatchesDevices checks a 'VGPUConfigSpec' to see if it matches on a device at the specified 'index'.
 func (vs *VGPUConfigSpec) MatchesDevices(index int) bool {
-	switch devices := vs.Devices.(type) {
-	case []int:
+	if devices, ok := vs.Devices.([]int); ok {
 		for _, d := range devices {
 			if index == d {
 				return true
 			}
 		}
 	}
+
 	return vs.MatchesAllDevices()
 }
