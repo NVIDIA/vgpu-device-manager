@@ -14,8 +14,6 @@
 
 ARG BASE_DIST=ubi8
 ARG CUDA_VERSION
-ARG GOLANG_VERSION=x.x.x
-ARG VERSION="N/A"
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-base-${BASE_DIST} as build
 
@@ -39,8 +37,9 @@ ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
 
 WORKDIR /build
 COPY . .
-RUN GOOS=linux go build -o /artifacts/nvidia-vgpu-dm ./cmd/nvidia-vgpu-dm
-RUN GOOS=linux go build -o /artifacts/k8s-nvidia-vgpu-dm ./deployments/container/
+ARG VERSION="N/A"
+ARG GIT_COMMIT="unknown"
+RUN make PREFIX=/artifacts cmds
 
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-base-${BASE_DIST}
@@ -48,7 +47,7 @@ FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-base-${BASE_DIST}
 ENV NVIDIA_VISIBLE_DEVICES=void
 
 COPY --from=build /artifacts/nvidia-vgpu-dm /usr/bin/nvidia-vgpu-dm
-COPY --from=build /artifacts/k8s-nvidia-vgpu-dm /usr/bin/k8s-nvidia-vgpu-dm
+COPY --from=build /artifacts/nvidia-k8s-vgpu-dm /usr/bin/nvidia-k8s-vgpu-dm
 
 LABEL version="${VERSION}"
 LABEL release="N/A"
@@ -66,4 +65,4 @@ RUN if [ -n "${CVE_UPDATES}" ]; then \
         rm -rf /var/cache/yum/*; \
     fi
 
-ENTRYPOINT ["k8s-nvidia-vgpu-dm"]
+ENTRYPOINT ["nvidia-k8s-vgpu-dm"]
