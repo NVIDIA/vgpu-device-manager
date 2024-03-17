@@ -3,7 +3,7 @@ module github.com/NVIDIA/vgpu-device-manager
 go 1.20
 
 require (
-	github.com/NVIDIA/go-nvlib v0.1.0
+	github.com/NVIDIA/go-nvlib v0.2.0
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.9.0
