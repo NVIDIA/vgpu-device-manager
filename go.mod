@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/NVIDIA/go-nvlib v0.1.0
 	github.com/google/uuid v1.6.0
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.1
 	k8s.io/api v0.29.2
