@@ -22,3 +22,8 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+
+  - package-ecosystem: "docker"
+    directory: "/deployments/container"
+    schedule:
+      interval: "daily"
