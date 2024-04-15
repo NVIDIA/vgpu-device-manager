@@ -93,7 +93,7 @@ func BuildCommand() *cli.Command {
 func assertWrapper(c *cli.Context, f *Flags) error {
 	err := CheckFlags(f)
 	if err != nil {
-		cli.ShowSubcommandHelp(c)
+		_ = cli.ShowSubcommandHelp(c)
 		return err
 	}
 
@@ -217,6 +217,7 @@ func WalkSelectedVGPUConfigForEachGPU(vgpuConfig v1.VGPUConfigSpecSlice, f func(
 
 			log.Debugf("  GPU %v: %v", i, deviceID)
 
+			// nolint: gosec
 			err = f(&vc, i, deviceID)
 			if err != nil {
 				return err

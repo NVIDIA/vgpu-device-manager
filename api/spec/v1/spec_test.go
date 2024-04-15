@@ -17,9 +17,10 @@
 package v1
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/yaml"
-	"testing"
 )
 
 func TestSpec(t *testing.T) {
