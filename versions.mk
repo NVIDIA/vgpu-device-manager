@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VERSION ?= v0.2.5
+VERSION ?= v0.2.6
 
 vVERSION := v$(VERSION:v%=%)
 
-GOLANG_VERSION ?= 1.21.8
+GOLANG_VERSION ?= 1.22.2
 
 GIT_COMMIT ?= $(shell git describe --match="" --dirty --long --always --abbrev=40 2> /dev/null || echo "")
