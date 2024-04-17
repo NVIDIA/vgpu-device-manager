@@ -67,8 +67,6 @@ func main() {
 		return nil
 	}
 
-	log.Infof("version: %s", c.Version)
-
 	err := c.Run(os.Args)
 	if err != nil {
 		log.Fatalf(err.Error())
