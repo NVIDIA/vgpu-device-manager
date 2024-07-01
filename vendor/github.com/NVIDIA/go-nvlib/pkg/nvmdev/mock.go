@@ -25,14 +25,15 @@ import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvpci/bytes"
 )
 
-// MockNvmdev mock mdev device
+// MockNvmdev mock mdev device.
 type MockNvmdev struct {
 	*nvmdev
+	pciDevicesRoot string
 }
 
 var _ Interface = (*MockNvmdev)(nil)
 
-// NewMock creates new mock mediated (vGPU) and parent PCI devices and removes old devices
+// NewMock creates new mock mediated (vGPU) and parent PCI devices and removes old devices.
 func NewMock() (mock *MockNvmdev, rerr error) {
 	mdevParentsRootDir, err := os.MkdirTemp(os.TempDir(), "")
 	if err != nil {
@@ -53,23 +54,47 @@ func NewMock() (mock *MockNvmdev, rerr error) {
 		}
 	}()
 
+	pciRootDir, err := os.MkdirTemp(os.TempDir(), "")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rerr != nil {
+			os.RemoveAll(pciRootDir)
+		}
+	}()
+
+	nvpciLib := nvpci.New(nvpci.WithPCIDevicesRoot(pciRootDir))
 	mock = &MockNvmdev{
-		&nvmdev{mdevParentsRootDir, mdevDevicesRootDir},
+		nvmdev: &nvmdev{
+			mdevParentsRoot: mdevParentsRootDir,
+			mdevDevicesRoot: mdevDevicesRootDir,
+			nvpci:           nvpciLib,
+		},
+		pciDevicesRoot: pciRootDir,
 	}
 
 	return mock, nil
 }
 
-// Cleanup removes the mocked mediated (vGPU) and parent PCI devices root folders
+// Cleanup removes the mocked mediated (vGPU) and parent PCI devices root folders.
 func (m *MockNvmdev) Cleanup() {
 	os.RemoveAll(m.mdevParentsRoot)
 	os.RemoveAll(m.mdevDevicesRoot)
+	os.RemoveAll(m.pciDevicesRoot)
 }
 
-// AddMockA100Parent creates an A100 like parent GPU mock device
+// AddMockA100Parent creates an A100 like parent GPU mock device.
 func (m *MockNvmdev) AddMockA100Parent(address string, numaNode int) error {
+	pciDeviceDir := filepath.Join(m.pciDevicesRoot, address)
+	err := os.MkdirAll(pciDeviceDir, 0755)
+	if err != nil {
+		return err
+	}
+
+	// /sys/class/mdev_bus/<address> is a symlink to /sys/bus/pci/devices/<address>
 	deviceDir := filepath.Join(m.mdevParentsRoot, address)
-	err := os.MkdirAll(deviceDir, 0755)
+	err = os.Symlink(pciDeviceDir, deviceDir)
 	if err != nil {
 		return err
 	}
@@ -220,6 +245,9 @@ func (m *MockNvmdev) AddMockA100Mdev(uuid string, mdevType string, mdevTypeDir s
 		return err
 	}
 	err = os.Symlink(filepath.Join(mdevDeviceDir, "vfio_mdev"), filepath.Join(mdevDeviceDir, "driver"))
+	if err != nil {
+		return err
+	}
 
 	_, err = os.Create(filepath.Join(mdevDeviceDir, "200"))
 	if err != nil {

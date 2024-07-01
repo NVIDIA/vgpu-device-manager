@@ -57,10 +57,7 @@ func (m *nvlibVGPUConfigManager) GetVGPUConfig(gpu int) (types.VGPUConfig, error
 	}
 	vgpuConfig := types.VGPUConfig{}
 	for _, vgpuDev := range vgpuDevs {
-		pf, err := vgpuDev.GetPhysicalFunction()
-		if err != nil {
-			return nil, fmt.Errorf("error getting physical device for vGPU device: %v", err)
-		}
+		pf := vgpuDev.GetPhysicalFunction()
 		if device.Address == pf.Address {
 			vgpuConfig[vgpuDev.MDEVType]++
 		}
@@ -85,11 +82,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	// Filter for 'parent' devices that are backed by the physical function
 	parents := []*nvmdev.ParentDevice{}
 	for _, p := range allParents {
-		pf, err := p.GetPhysicalFunction()
-		if err != nil {
-			return fmt.Errorf("error getting physical function for parent device: %v", err)
-		}
-
+		pf := p.GetPhysicalFunction()
 		if pf.Address == device.Address {
 			parents = append(parents, p)
 		}
@@ -163,11 +156,7 @@ func (m *nvlibVGPUConfigManager) ClearVGPUConfig(gpu int) error {
 	}
 
 	for _, vgpuDev := range vgpuDevs {
-		pf, err := vgpuDev.GetPhysicalFunction()
-		if err != nil {
-			return fmt.Errorf("error getting physical device for vGPU device: %v", err)
-		}
-
+		pf := vgpuDev.GetPhysicalFunction()
 		if device.Address == pf.Address {
 			err = vgpuDev.Delete()
 			if err != nil {
