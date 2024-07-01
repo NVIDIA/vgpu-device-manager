@@ -28,7 +28,7 @@ const (
 	// timeSlicedRegex represents the format for a time-sliced, vGPU type name.
 	// It embeds the GPU type, framebuffer size in GB, and a letter representing the 'series'.
 	// Note: The framebuffer size can be '0' to represent 512MB (i.e. M60-0Q).
-	timeSlicedRegex = "^(?P<GPU>[A-Z0-9]+)-(?P<GB>0|[1-9][0-9]*)(?P<S>A|B|C|Q)$"
+	timeSlicedRegex = "^(?P<GPU>[A-Z0-9]+(-([a-zA-Z]+))*)-(?P<GB>0|[1-9][0-9]*)(?P<S>A|B|C|Q)$"
 	// migBackedRegex represents the format for a MIG-backed, vGPU type name.
 	// In addition to embedding all of the fields from 'timeSlicedRegex', it also
 	// contains the number of GPU instances and any additional attributes (i.e. media extensions).

@@ -148,6 +148,11 @@ func TestParseVGPUType(t *testing.T) {
 			"bogus",
 			false,
 		},
+		{
+			"Valid RTX6000-Ada-2Q",
+			"RTX6000-Ada-2Q",
+			true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -217,6 +222,13 @@ func TestVGPUConfigAssertValid(t *testing.T) {
 				"A100-1-5C": 1,
 			},
 			false,
+		},
+		{
+			"Valid config - RTX Ada device",
+			map[string]int{
+				"RTX6000-Ada-2Q": 24,
+			},
+			true,
 		},
 	}
 
