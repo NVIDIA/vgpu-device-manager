@@ -63,18 +63,9 @@ assert-fmt:
 		rm fmt.out; \
 	fi
 
-ineffassign:
-	ineffassign $(MODULE)/...
-
 lint:
 # We use `go list -f '{{.Dir}}' $(MODULE)/...` to skip the `vendor` folder.
-	go list -f '{{.Dir}}' $(MODULE)/... | xargs golint -set_exit_status
-
-misspell:
-	misspell $(MODULE)/...
-
-vet:
-	go vet $(MODULE)/...
+	golangci-lint run ./...
 
 COVERAGE_FILE := coverage.out
 test: build

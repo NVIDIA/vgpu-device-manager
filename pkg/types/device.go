@@ -31,7 +31,7 @@ func NewDeviceID(device, vendor uint16) DeviceID {
 
 // NewDeviceIDFromString constructs a 'DeviceID' from its string representation.
 func NewDeviceIDFromString(str string) (DeviceID, error) {
-	deviceID, err := strconv.ParseInt(str, 0, 32)
+	deviceID, err := strconv.ParseUint(str, 0, 32)
 	if err != nil {
 		return 0, fmt.Errorf("unable to create DeviceID from string '%v': %v", str, err)
 	}
@@ -45,10 +45,12 @@ func (d DeviceID) String() string {
 
 // GetVendor returns the 'vendor' portion of a 'DeviceID'.
 func (d DeviceID) GetVendor() uint16 {
+	// nolint:gosec // DeviceID is constructed from two uint16 numbers
 	return uint16(d)
 }
 
 // GetDevice returns the 'device' portion of a 'DeviceID'.
 func (d DeviceID) GetDevice() uint16 {
+	// nolint:gosec // DeviceID is constructed from two uint16 numbers
 	return uint16(d >> 16)
 }
