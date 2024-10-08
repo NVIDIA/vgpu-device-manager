@@ -23,11 +23,6 @@ $(PUSH_TARGETS): push-%:
 	        image copy \
 	        $(IMAGE) $(OUT_IMAGE)
 
-push-short:
-	$(REGCTL) \
-	        image copy \
-	        $(IMAGE) $(OUT_IMAGE_NAME):$(OUT_IMAGE_VERSION)
-
 # We only support x86_64 for now, so disable arm64 for all build targets.
 # Even though the resulting images are not multi-arch, this allows us to
 # leverage buildx/regctl in the CI for consistency with other projects.

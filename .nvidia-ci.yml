@@ -60,15 +60,15 @@ variables:
     - !reference [.regctl-setup, before_script]
     - apk add --no-cache make bash
     - >
-      regctl manifest get ${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION}-${DIST} --list > /dev/null && echo "${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION}-${DIST}" || ( echo "${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION}-${DIST} does not exist" && sleep infinity )
+      regctl manifest get ${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION}- --list > /dev/null && echo "${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION}" || ( echo "${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION} does not exist" && sleep infinity )
   script:
     - regctl registry login "${OUT_REGISTRY}" -u "${OUT_REGISTRY_USER}" -p "${OUT_REGISTRY_TOKEN}"
-    - make -f deployments/container/Makefile IMAGE=${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION}-${DIST} OUT_IMAGE=${OUT_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}-${DIST} push-${DIST}
+    - make -f deployments/container/Makefile IMAGE=${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION} OUT_IMAGE=${OUT_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} push-${DIST}
 
-image-ubi8:
+image-ubi9:
   extends:
     - .image-pull
-    - .dist-ubi8
+    - .dist-ubi9
 
 # We skip the integration tests for the internal CI:
 .integration:
@@ -84,7 +84,7 @@ image-ubi8:
   stage: scan
   image: "${PULSE_IMAGE}"
   variables:
-    IMAGE: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}-${DIST}"
+    IMAGE: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
     IMAGE_ARCHIVE: "vgpu-device-manager.tar"
   except:
     variables:
@@ -110,18 +110,18 @@ image-ubi8:
       - vulns.json
       - policy_evaluation.json
 
-# The .scan-ubi8 steps forms the base for all ubi8 image scans across supported architectures
-.scan-ubi8:
+# The .scan-ubi9 steps forms the base for all ubi9 image scans across supported architectures
+.scan-ubi9:
   extends:
     - .scan
-    - .dist-ubi8
+    - .dist-ubi9
   needs:
-    - image-ubi8
+    - image-ubi9
 
 # Define the scan targets
-scan-ubi8-amd64:
+scan-ubi9-amd64:
   extends:
-    - .scan-ubi8
+    - .scan-ubi9
     - .platform-amd64
 
 # Define the external release helpers
@@ -135,10 +135,10 @@ scan-ubi8-amd64:
 
 # Define the external release targets
 # Release to NGC
-release:ngc-ubi8:
+release:ngc-ubi9:
   extends:
     - .release:ngc
-    - .dist-ubi8
+    - .dist-ubi9
 
 # Define the external image signing steps for NGC
 # Download the ngc cli binary for use in the sign steps
@@ -167,7 +167,7 @@ release:ngc-ubi8:
   variables:
     NGC_CLI_API_KEY: "${NGC_REGISTRY_TOKEN}"
     IMAGE_NAME: "${NGC_REGISTRY_IMAGE}"
-    IMAGE_TAG: "${CI_COMMIT_TAG}-${DIST}"
+    IMAGE_TAG: "${CI_COMMIT_TAG}"
   retry:
     max: 2
   before_script:
@@ -185,11 +185,11 @@ sign:ngc-short-tag:
   variables:
     IMAGE_TAG: "${CI_COMMIT_TAG}"
   needs:
-    - release:ngc-ubi8
+    - release:ngc-ubi9
 
-sign:ngc-ubi8:
+sign:ngc-ubi9:
   extends:
-    - .dist-ubi8
+    - .dist-ubi9
     - .sign:ngc
   needs:
-    - release:ngc-ubi8
+    - release:ngc-ubi9
