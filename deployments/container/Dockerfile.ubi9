@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM nvcr.io/nvidia/cuda:12.5.1-base-ubi8 as build
+FROM nvcr.io/nvidia/cuda:12.6.1-base-ubi9 as build
 
 RUN yum install -y wget make git gcc
 
@@ -39,7 +39,7 @@ ARG GIT_COMMIT="unknown"
 RUN make PREFIX=/artifacts cmds
 
 
-FROM nvcr.io/nvidia/cuda:12.5.1-base-ubi8
+FROM nvcr.io/nvidia/cuda:12.6.1-base-ubi9
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 

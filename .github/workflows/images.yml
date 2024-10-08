@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dist: [ubi8]
+        dist: [ubi9]
     steps:
       - uses: actions/checkout@v4
 

@@ -92,7 +92,7 @@ unit-tests:
   script:
     - make -f deployments/container/Makefile build-${DIST}
 
-image-ubi8:
+image-ubi9:
   extends:
     - .image-build
-    - .dist-ubi8
+    - .dist-ubi9
