@@ -102,14 +102,14 @@ github.com/spf13/pflag
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
-# github.com/urfave/cli/v2 v2.27.2
+# github.com/urfave/cli/v2 v2.27.4
 ## explicit; go 1.18
 github.com/urfave/cli/v2
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16
-# github.com/xrash/smetrics v0.0.0-20240312152122-5f08fbb34913
-## explicit; go 1.15.0
+# github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1
+## explicit; go 1.15
 github.com/xrash/smetrics
 # golang.org/x/net v0.26.0
 ## explicit; go 1.18
