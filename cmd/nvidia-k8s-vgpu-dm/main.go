@@ -242,9 +242,10 @@ func continuouslySyncVGPUConfigChanges(clientset *kubernetes.Clientset, vGPUConf
 		fields.OneTermEqualSelector("metadata.name", nodeNameFlag),
 	)
 
-	_, controller := cache.NewInformer(
-		listWatch, &corev1.Node{}, 0,
-		cache.ResourceEventHandlerFuncs{
+	opts := cache.InformerOptions{
+		ListerWatcher: listWatch,
+		ObjectType:    &corev1.Node{},
+		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				vGPUConfig.Set(obj.(*corev1.Node).Labels[vGPUConfigLabel])
 			},
@@ -256,8 +257,9 @@ func continuouslySyncVGPUConfigChanges(clientset *kubernetes.Clientset, vGPUConf
 				}
 			},
 		},
-	)
-
+		ResyncPeriod: 0,
+	}
+	_, controller := cache.NewInformerWithOptions(opts)
 	stop := make(chan struct{})
 	go controller.Run(stop)
 	return stop
