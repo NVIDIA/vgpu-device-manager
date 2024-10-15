@@ -179,14 +179,6 @@ release:ngc-ubi9:
     - 'echo "Signing the image ${IMAGE_NAME}:${IMAGE_TAG}"'
     - ngc-cli/ngc registry image publish --source ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:${IMAGE_TAG} --public --discoverable --allow-guest --sign --org nvidia
 
-sign:ngc-short-tag:
-  extends:
-    - .sign:ngc
-  variables:
-    IMAGE_TAG: "${CI_COMMIT_TAG}"
-  needs:
-    - release:ngc-ubi9
-
 sign:ngc-ubi9:
   extends:
     - .dist-ubi9
