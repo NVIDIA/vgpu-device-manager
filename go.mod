@@ -1,7 +1,6 @@
 module github.com/NVIDIA/vgpu-device-manager
 
-go 1.22.0
-toolchain go1.23.5
+go 1.24.0
 
 require (
 	github.com/NVIDIA/go-nvlib v0.7.0
