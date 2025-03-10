@@ -4,7 +4,7 @@ go 1.22.0
 toolchain go1.23.5
 
 require (
-	github.com/NVIDIA/go-nvlib v0.7.0
+	github.com/NVIDIA/go-nvlib v0.7.1
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
