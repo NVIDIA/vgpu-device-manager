@@ -400,7 +400,7 @@ func shutdownGPUOperands(clientset *kubernetes.Clientset) error {
 		LabelSelector: "app=nvidia-sandbox-device-plugin-daemonset",
 	})
 	if err != nil {
-		return fmt.Errorf("Error shutting down sandbox-device-plugin: %v", err)
+		return fmt.Errorf("error shutting down sandbox-device-plugin: %v", err)
 	}
 
 	log.Infof("Waiting for sandbox-validator to shutdown")
@@ -409,7 +409,7 @@ func shutdownGPUOperands(clientset *kubernetes.Clientset) error {
 		LabelSelector: "app=nvidia-sandbox-validator",
 	})
 	if err != nil {
-		return fmt.Errorf("Error shutting down sandbox-validator: %v", err)
+		return fmt.Errorf("error shutting down sandbox-validator: %v", err)
 	}
 
 	return nil

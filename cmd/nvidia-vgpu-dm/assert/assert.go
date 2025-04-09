@@ -124,7 +124,7 @@ func assertWrapper(c *cli.Context, f *Flags) error {
 	err = VGPUConfig(&context)
 	if err != nil {
 		log.Debug(err.Error())
-		return fmt.Errorf("Assertion failure: selected configuration not currently applied")
+		return fmt.Errorf("assertion failure: selected configuration not currently applied")
 	}
 
 	log.Infof("Selected vGPU device configuration is currently applied")
