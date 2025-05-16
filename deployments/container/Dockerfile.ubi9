@@ -12,25 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM nvcr.io/nvidia/cuda:12.8.0-base-ubi9 as build
+FROM nvcr.io/nvidia/distroless/go:v3.1.7-dev
 
 RUN yum install -y wget make git gcc
-
-ARG GOLANG_VERSION=0.0.0
-RUN set -eux; \
-    \
-    arch="$(uname -m)"; \
-    case "${arch##*-}" in \
-        x86_64 | amd64) ARCH='amd64' ;; \
-        ppc64el | ppc64le) ARCH='ppc64le' ;; \
-        aarch64) ARCH='arm64' ;; \
-        *) echo "unsupported architecture" ; exit 1 ;; \
-    esac; \
-    wget -nv -O - https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-${ARCH}.tar.gz \
-    | tar -C /usr/local -xz
-
-ENV GOPATH /go
-ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
 
 WORKDIR /build
 COPY . .
@@ -38,8 +22,7 @@ ARG VERSION="N/A"
 ARG GIT_COMMIT="unknown"
 RUN make PREFIX=/artifacts cmds
 
-
-FROM nvcr.io/nvidia/cuda:12.8.0-base-ubi9
+FROM nvcr.io/nvidia/distroless/go:v3.1.7-dev
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
@@ -53,13 +36,5 @@ LABEL io.k8s.display-name="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL name="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL summary="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL description="See summary"
-
-
-# Install / upgrade packages here that are required to resolve CVEs
-ARG CVE_UPDATES
-RUN if [ -n "${CVE_UPDATES}" ]; then \
-        yum update -y ${CVE_UPDATES} && \
-        rm -rf /var/cache/yum/*; \
-    fi
 
 ENTRYPOINT ["nvidia-k8s-vgpu-dm"]
