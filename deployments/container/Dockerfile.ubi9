@@ -39,7 +39,7 @@ ARG GIT_COMMIT="unknown"
 RUN make PREFIX=/artifacts cmds
 
 
-FROM nvcr.io/nvidia/cuda:12.8.0-base-ubi9
+FROM nvcr.io/nvidia/distroless/go:v3.1.8
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
@@ -54,12 +54,5 @@ LABEL name="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL summary="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL description="See summary"
 
-
-# Install / upgrade packages here that are required to resolve CVEs
-ARG CVE_UPDATES
-RUN if [ -n "${CVE_UPDATES}" ]; then \
-        yum update -y ${CVE_UPDATES} && \
-        rm -rf /var/cache/yum/*; \
-    fi
-
+USER 0:0
 ENTRYPOINT ["nvidia-k8s-vgpu-dm"]
