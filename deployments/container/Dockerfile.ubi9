@@ -39,7 +39,7 @@ ARG GIT_COMMIT="unknown"
 RUN make PREFIX=/artifacts cmds
 
 
-FROM nvcr.io/nvidia/distroless/go:v3.1.8
+FROM nvcr.io/nvidia/distroless/go:v3.1.10
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
