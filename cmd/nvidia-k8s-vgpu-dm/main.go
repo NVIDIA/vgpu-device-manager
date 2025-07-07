@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/yaml"
 
 	"context"
 	"sync"
@@ -37,6 +38,10 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	migpartedv1 "github.com/NVIDIA/mig-parted/api/spec/v1"
+
+	v1 "github.com/NVIDIA/vgpu-device-manager/api/spec/v1"
+	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
 	"github.com/NVIDIA/vgpu-device-manager/internal/info"
 )
 
@@ -47,6 +52,11 @@ const (
 	vGPUConfigStateLabel = "nvidia.com/vgpu.config.state"
 	pluginStateLabel     = "nvidia.com/gpu.deploy.sandbox-device-plugin"
 	validatorStateLabel  = "nvidia.com/gpu.deploy.sandbox-validator"
+
+	defaultDriverRootCtrPath         = "/driver-root"
+	defaultHostRootMount             = "/host"
+	defaultHostMigManagerStateFile   = "/etc/systemd/system/nvidia-mig-manager.service.d/override.conf"
+	defaultHostKubeletSystemdService = "kubelet.service"
 )
 
 var (
@@ -56,9 +66,22 @@ var (
 	configFileFlag        string
 	defaultVGPUConfigFlag string
 
+	hostRootMountFlag              string
+	hostMigManagerStateFileFlag    string
+	hostKubeletSystemdServiceFlag  string
+	driverRootCtrPathFlag          string
+	gpuClientsFileFlag             string
+	withRebootFlag                 bool
+	withShutdownHostGPUClientsFlag bool
+
 	pluginDeployed    string
 	validatorDeployed string
 )
+
+type GPUClients struct {
+	Version         string   `json:"version"          yaml:"version"`
+	SystemdServices []string `json:"systemd-services" yaml:"systemd-services"`
+}
 
 // SyncableVGPUConfig is used to synchronize on changes to a configuration value.
 // That is, callers of Get() will block until a call to Set() is made.
@@ -147,6 +170,62 @@ func main() {
 			Usage:       "the default vGPU config to use if no label is set",
 			Destination: &defaultVGPUConfigFlag,
 			EnvVars:     []string{"DEFAULT_VGPU_CONFIG"},
+		},
+		&cli.StringFlag{
+			Name:        "host-root-mount",
+			Aliases:     []string{"m"},
+			Value:       defaultHostRootMount,
+			Usage:       "container path where host root directory is mounted",
+			Destination: &hostRootMountFlag,
+			EnvVars:     []string{"HOST_ROOT_MOUNT"},
+		},
+		&cli.StringFlag{
+			Name:        "host-mig-manager-state-file",
+			Aliases:     []string{"o"},
+			Value:       defaultHostMigManagerStateFile,
+			Usage:       "host path where the host's systemd mig-manager state file is located",
+			Destination: &hostMigManagerStateFileFlag,
+			EnvVars:     []string{"HOST_MIG_MANAGER_STATE_FILE"},
+		},
+		&cli.StringFlag{
+			Name:        "host-kubelet-systemd-service",
+			Aliases:     []string{"k"},
+			Value:       defaultHostKubeletSystemdService,
+			Usage:       "name of the host's 'kubelet' systemd service which may need to be shutdown/restarted across a MIG mode reconfiguration",
+			Destination: &hostKubeletSystemdServiceFlag,
+			EnvVars:     []string{"HOST_KUBELET_SYSTEMD_SERVICE"},
+		},
+		&cli.StringFlag{
+			Name:        "driver-root-ctr-path",
+			Aliases:     []string{"a"},
+			Value:       defaultDriverRootCtrPath,
+			Usage:       "root path to the NVIDIA driver installation mounted in the container",
+			Destination: &driverRootCtrPathFlag,
+			EnvVars:     []string{"DRIVER_ROOT_CTR_PATH"},
+		},
+		&cli.StringFlag{
+			Name:        "gpu-clients-file",
+			Aliases:     []string{"g"},
+			Value:       "",
+			Usage:       "the path to the file listing the GPU clients that need to be shutdown across a MIG configuration",
+			Destination: &gpuClientsFileFlag,
+			EnvVars:     []string{"GPU_CLIENTS_FILE"},
+		},
+		&cli.BoolFlag{
+			Name:        "with-reboot",
+			Aliases:     []string{"r"},
+			Value:       false,
+			Usage:       "reboot the node if changing the MIG mode fails for any reason",
+			Destination: &withRebootFlag,
+			EnvVars:     []string{"WITH_REBOOT"},
+		},
+		&cli.BoolFlag{
+			Name:        "with-shutdown-host-gpu-clients",
+			Aliases:     []string{"w"},
+			Value:       false,
+			Usage:       "shutdown/restart any required host GPU clients across a MIG configuration",
+			Destination: &withShutdownHostGPUClientsFlag,
+			EnvVars:     []string{"WITH_SHUTDOWN_HOST_GPU_CLIENTS"},
 		},
 	}
 
@@ -294,6 +373,10 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 	err = shutdownGPUOperands(clientset)
 	if err != nil {
 		return fmt.Errorf("unable to shutdown gpu operands: %v", err)
+	}
+
+	if err := handleMIGConfiguration(clientset, selectedConfig); err != nil {
+		return fmt.Errorf("unable to handle MIG configuration: %v", err)
 	}
 
 	log.Info("Applying the selected vGPU device configuration to the node")
@@ -503,4 +586,130 @@ func setNodeLabelValue(clientset *kubernetes.Clientset, label, value string) err
 	}
 
 	return nil
+}
+
+func handleMIGConfiguration(clientset kubernetes.Interface, selectedConfig string) error {
+	driverRoot := root(driverRootCtrPathFlag)
+	driverLibraryPath, err := driverRoot.getDriverLibraryPath()
+	if err != nil {
+		log.Errorf("Skipping MIG configuration: unable to find the driver library path: %v", err)
+		return nil
+	}
+
+	migConfig, err := determineMIGConfig(selectedConfig)
+	if err != nil {
+		return err
+	}
+
+	configFile, err := saveMIGConfigToTempFile(migConfig)
+	if err != nil {
+		return fmt.Errorf("failed to save MIG config to temporary file: %w", err)
+	}
+
+	return updateMIGConfig(clientset.(*kubernetes.Clientset), driverLibraryPath, configFile, selectedConfig)
+}
+
+func determineMIGConfig(selectedConfig string) (*migpartedv1.Spec, error) {
+	f := &assert.Flags{
+		ConfigFile:     configFileFlag,
+		SelectedConfig: selectedConfig,
+		ValidConfig:    false, // We don't need to validate the config here, just parse it.
+	}
+
+	log.Debugf("Parsing vGPU config file...")
+	spec, err := assert.ParseConfigFile(f)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing config file: %w", err)
+	}
+
+	log.Debugf("Selecting specific vGPU config...")
+	vgpuConfig, err := assert.GetSelectedVGPUConfig(f, spec)
+	if err != nil {
+		return nil, fmt.Errorf("error getting selected VGPU config: %w", err)
+	}
+
+	return convertToMIGConfig(vgpuConfig, selectedConfig)
+}
+
+func convertToMIGConfig(vgpuConfig v1.VGPUConfigSpecSlice, selectedConfig string) (*migpartedv1.Spec, error) {
+	migConfigSpecSlice, err := vgpuConfig.ToMigConfigSpecSlice()
+	if err != nil {
+		return nil, fmt.Errorf("error converting vGPU config to MIG config: %w", err)
+	}
+	migSpec := &migpartedv1.Spec{
+		Version: migpartedv1.Version,
+		MigConfigs: map[string]migpartedv1.MigConfigSpecSlice{
+			selectedConfig: migConfigSpecSlice,
+		},
+	}
+	return migSpec, nil
+}
+
+func saveMIGConfigToTempFile(migConfig *migpartedv1.Spec) (string, error) {
+	tempFile, err := os.CreateTemp("", "mig-parted-config-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	defer tempFile.Close()
+
+	yamlData, err := yaml.Marshal(migConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal MIG config to YAML: %w", err)
+	}
+
+	if _, err := tempFile.Write(yamlData); err != nil {
+		return "", fmt.Errorf("failed to write YAML data to temporary file: %w", err)
+	}
+
+	return tempFile.Name(), nil
+}
+
+func updateMIGConfig(clientset *kubernetes.Clientset, driverLibraryPath, migPartedConfigFile, selectedConfig string) error {
+	defer func() {
+		if err := os.Remove(migPartedConfigFile); err != nil {
+			log.Errorf("Failed to remove temporary mig-parted config file %s: %v", migPartedConfigFile, err)
+		}
+	}()
+
+	gpuClients, err := parseGPUCLientsFile(gpuClientsFileFlag)
+	if err != nil {
+		return fmt.Errorf("error parsing host's GPU clients file: %w", err)
+	}
+
+	opts := &reconfigureMIGOptions{
+		NodeName:                   nodeNameFlag,
+		MIGPartedConfigFile:        migPartedConfigFile,
+		SelectedMIGConfig:          selectedConfig,
+		DriverLibraryPath:          driverLibraryPath,
+		WithReboot:                 withRebootFlag,
+		WithShutdownHostGPUClients: withShutdownHostGPUClientsFlag,
+		HostRootMount:              hostRootMountFlag,
+		HostMIGManagerStateFile:    hostMigManagerStateFileFlag,
+		HostGPUClientServices:      gpuClients.SystemdServices,
+		HostKubeletService:         hostKubeletSystemdServiceFlag,
+	}
+
+	return reconfigureMIG(clientset, opts)
+}
+
+func parseGPUCLientsFile(file string) (*GPUClients, error) {
+	var err error
+	var yamlBytes []byte
+
+	if file == "" {
+		return &GPUClients{}, nil
+	}
+
+	yamlBytes, err = os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("read error: %w", err)
+	}
+
+	var clients GPUClients
+	err = yaml.Unmarshal(yamlBytes, &clients)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	return &clients, nil
 }

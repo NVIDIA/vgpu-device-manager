@@ -20,6 +20,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	migpartedv1 "github.com/NVIDIA/mig-parted/api/spec/v1"
+	migtypes "github.com/NVIDIA/mig-parted/pkg/types"
+
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
@@ -158,6 +161,44 @@ func (s *VGPUConfigSpec) UnmarshalJSON(b []byte) error {
 
 	*s = result
 	return nil
+}
+
+func (s VGPUConfigSpecSlice) ToMigConfigSpecSlice() (migpartedv1.MigConfigSpecSlice, error) {
+	var migConfigSpecs migpartedv1.MigConfigSpecSlice
+
+	for _, vgpuSpec := range s {
+		migSpec := migpartedv1.MigConfigSpec{
+			DeviceFilter: vgpuSpec.DeviceFilter,
+			Devices:      vgpuSpec.Devices,
+			MigDevices:   make(migtypes.MigConfig),
+		}
+
+		migEnabled := false
+		for vgpuType := range vgpuSpec.VGPUDevices {
+			vgpu, err := types.ParseVGPUType(vgpuType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse vGPU type %s: %w", vgpuType, err)
+			}
+
+			if vgpu.G > 0 {
+				migEnabled = true
+				migProfile := fmt.Sprintf("%dg.%dgb", vgpu.G, vgpu.GB)
+				for _, attr := range vgpu.Attr {
+					if attr == types.AttributeMediaExtensions {
+						migProfile += ".me"
+						break
+					}
+				}
+				migSpec.MigDevices[migProfile] = vgpuSpec.VGPUDevices[vgpuType]
+			}
+		}
+
+		migSpec.MigEnabled = migEnabled
+
+		migConfigSpecs = append(migConfigSpecs, migSpec)
+	}
+
+	return migConfigSpecs, nil
 }
 
 func containsKey(m map[string]json.RawMessage, s string) bool {
