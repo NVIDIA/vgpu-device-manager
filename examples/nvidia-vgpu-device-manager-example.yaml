@@ -19,11 +19,11 @@ spec:
       serviceAccountName: vgpu-device-manager
       containers:
       - name: vgpu-device-manager
-        image: nvcr.io/nvidia/cloud-native/vgpu-device-manager:v0.1.0
+        image: nvcr.io/nvidia/cloud-native/vgpu-device-manager:v0.3.0
         imagePullPolicy: IfNotPresent
         env:
         - name: NAMESPACE
-          value: "gpu-operator"
+          value: "default"
         - name: NODE_NAME
           valueFrom:
             fieldRef:
