@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	migpartedv1 "github.com/NVIDIA/mig-parted/api/spec/v1"
+	migreconfigure "github.com/NVIDIA/mig-parted/pkg/mig/reconfigure"
 
 	v1 "github.com/NVIDIA/vgpu-device-manager/api/spec/v1"
 	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
@@ -676,20 +677,25 @@ func updateMIGConfig(clientset *kubernetes.Clientset, driverLibraryPath, migPart
 		return fmt.Errorf("error parsing host's GPU clients file: %w", err)
 	}
 
-	opts := &reconfigureMIGOptions{
-		NodeName:                   nodeNameFlag,
-		MIGPartedConfigFile:        migPartedConfigFile,
-		SelectedMIGConfig:          selectedConfig,
-		DriverLibraryPath:          driverLibraryPath,
-		WithReboot:                 withRebootFlag,
-		WithShutdownHostGPUClients: withShutdownHostGPUClientsFlag,
-		HostRootMount:              hostRootMountFlag,
-		HostMIGManagerStateFile:    hostMigManagerStateFileFlag,
-		HostGPUClientServices:      gpuClients.SystemdServices,
-		HostKubeletService:         hostKubeletSystemdServiceFlag,
+	r, err := migreconfigure.New(
+		migreconfigure.WithAllowReboot(withRebootFlag),
+		migreconfigure.WithClientset(clientset),
+		migreconfigure.WithConfigStateLabel(vGPUConfigStateLabel),
+		migreconfigure.WithDriverLibraryPath(driverLibraryPath),
+		migreconfigure.WithHostGPUClientServices(gpuClients.SystemdServices...),
+		migreconfigure.WithHostKubeletService(hostKubeletSystemdServiceFlag),
+		migreconfigure.WithHostMIGManagerStateFile(hostMigManagerStateFileFlag),
+		migreconfigure.WithHostRootMount(hostRootMountFlag),
+		migreconfigure.WithMIGPartedConfigFile(migPartedConfigFile),
+		migreconfigure.WithNodeName(nodeNameFlag),
+		migreconfigure.WithSelectedMIGConfig(selectedConfig),
+		migreconfigure.WithShutdownHostGPUClients(withShutdownHostGPUClientsFlag),
+	)
+	if err != nil {
+		return err
 	}
 
-	return reconfigureMIG(clientset, opts)
+	return r.Reconfigure()
 }
 
 func parseGPUCLientsFile(file string) (*GPUClients, error) {
