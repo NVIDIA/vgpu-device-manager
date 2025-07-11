@@ -1,33 +1,16 @@
-/*
- * Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-package main
+package reconfigure
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	log "github.com/sirupsen/logrus"
-	"k8s.io/client-go/kubernetes"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -38,91 +21,42 @@ const (
 	ldPreloadEnvVar = "LD_PRELOAD"
 )
 
-var (
-	hostGPUClientServicesStopped []string
+func New(opts ...Option) (Reconfigurer, error) {
+	o := &reconfigureMIGOptions{}
 
-	systemdServicePrefixPattern = regexp.MustCompile(`^[a-zA-Z0-9:._\\-]+\.(service|socket|device|mount|automount|swap|target|path|timer|slice|scope)$`)
-)
+	for _, opt := range opts {
+		opt(o)
+	}
 
-// reconfigureMIGOptions contains configuration options for reconfiguring MIG
-// settings on a Kubernetes node. This struct is used to manage the various
-// parameters required for applying MIG configurations through mig-parted, including node identification, configuration files, reboot behavior, and host
-// system service management.
-type reconfigureMIGOptions struct {
-	// NodeName is the kubernetes node to change the MIG configuration on.
-	// Its validation follows the RFC 1123 standard for DNS subdomain names.
-	// Source: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
-	NodeName string `validate:"required,hostname_rfc1123"`
+	if err := o.Validate(); err != nil {
+		return nil, err
+	}
 
-	// MIGPartedConfigFile is the mig-parted configuration file path.
-	MIGPartedConfigFile string `validate:"required,filepath"`
-
-	// SelectedMIGConfig is the selected mig-parted configuration to apply to the
-	// node.
-	SelectedMIGConfig string
-
-	// DriverLibrayPath is the path to libnvidia-ml.so.1 in the container.
-	DriverLibraryPath string `validate:"required,filepath"`
-
-	// WithReboot reboots the node if changing the MIG mode fails for any reason.
-	WithReboot bool
-
-	// WithShutdownHostGPUClients shutdowns/restarts any required host GPU clients
-	// across a MIG configuration.
-	WithShutdownHostGPUClients bool
-
-	// HostRootMount is the container path where host root directory is mounted.
-	HostRootMount string `validate:"dirpath"`
-
-	// HostMIGManagerStateFile is the path where the systemd mig-manager state
-	// file is located.
-	HostMIGManagerStateFile string `validate:"filepath"`
-
-	// HostGPUClientServices is a comma separated list of host systemd services to
-	// shutdown/restart across a MIG reconfiguration.
-	HostGPUClientServices []string `validate:"dive,systemd_service_name"`
-
-	// HostKubeletService is the name of the host's 'kubelet' systemd service
-	// which may need to be shutdown/restarted across a MIG mode reconfiguration.
-	HostKubeletService string `validate:"systemd_service_name"`
+	return o, nil
 }
 
-// reconfigureMIG configures MIG (Multi-Instance GPU) settings on a Kubernetes
+// Reconfigure configures MIG (Multi-Instance GPU) settings on a Kubernetes
 // node. It validates the requested configuration, checks the current state,
 // applies MIG mode changes, manages host GPU client services, and handles
 // reboots when necessary. The function ensures that MIG configurations are
 // applied safely with proper service lifecycle management.
-func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions) error {
-	validate := validator.New(validator.WithRequiredStructEnabled())
-
-	log.Info("Validating reconfigure MIG options")
-	err := validate.RegisterValidation("systemd_service_name", validateSystemdServiceName)
-	if err != nil {
-		log.Error("Unable to register systemd service name validator")
-		return err
-	}
-	err = validate.Struct(opts)
-	if err != nil {
-		log.Error("Unable to validate the reconfigure MIG options")
-		return err
-	}
-
+func (opts *reconfigureMIGOptions) Reconfigure() error {
 	log.Info("Asserting that the requested configuration is present in the configuration file")
-	if err := assertValidMIGConfig(opts); err != nil {
+	if err := opts.assertValidMIGConfig(); err != nil {
 		log.Error("Unable to validate the selected MIG configuration")
 		return err
 	}
 
-	log.Infof("Getting current value of the '%s' node label", vGPUConfigStateLabel)
-	state, err := getNodeLabelValue(clientset, vGPUConfigStateLabel)
+	log.Infof("Getting current value of the '%s' node label", opts.configStateLabel)
+	state, err := opts.getNodeLabelValue(opts.configStateLabel)
 	if err != nil {
-		log.Errorf("Unable to get the value of the '%s' label", vGPUConfigStateLabel)
+		log.Errorf("Unable to get the value of the '%s' label", opts.configStateLabel)
 		return err
 	}
-	log.Infof("Current value of '%s=%s'", vGPUConfigStateLabel, state)
+	log.Infof("Current value of '%s=%s'", opts.configStateLabel, state)
 
 	log.Info("Checking if the selected MIG config is currently applied or not")
-	if err := assertMIGConfig(opts); err == nil {
+	if err := opts.assertMIGConfig(); err == nil {
 		log.Info("MIG configuration already applied")
 		return nil
 	}
@@ -131,7 +65,7 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 		stateFilePath := filepath.Join(opts.HostRootMount, opts.HostMIGManagerStateFile)
 		if _, err := os.Stat(stateFilePath); err == nil {
 			log.Infof("Persisting %s to %s", opts.SelectedMIGConfig, opts.HostMIGManagerStateFile)
-			if err := hostPersistConfig(opts); err != nil {
+			if err := opts.hostPersistConfig(); err != nil {
 				log.Errorf("Unable to persist %s to %s", opts.SelectedMIGConfig, opts.HostMIGManagerStateFile)
 				return err
 			}
@@ -141,7 +75,7 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 	log.Info("Checking if the MIG mode setting in the selected config is currently applied or not")
 	log.Infof("If the state is '%s', we expect this to always return true", configStateRebooting)
 	migModeChangeRequired := false
-	if err := assertMIGModeOnly(opts); err != nil {
+	if err := opts.assertMIGModeOnly(); err != nil {
 		if state == configStateRebooting {
 			log.Error("MIG mode change did not take effect after rebooting")
 			return fmt.Errorf("MIG mode change failed after reboot")
@@ -154,7 +88,7 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 
 	if opts.WithShutdownHostGPUClients {
 		log.Info("Shutting down all GPU clients on the host by stopping their systemd services")
-		if err := hostStopSystemdServices(opts); err != nil {
+		if err := opts.hostStopSystemdServices(); err != nil {
 			log.Error("Unable to shutdown GPU clients on host by stopping their systemd services")
 			return err
 		}
@@ -166,11 +100,11 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 
 	log.Info("Applying the MIG mode change from the selected config to the node (and double checking it took effect)")
 	log.Info("If the -r option was passed, the node will be automatically rebooted if this is not successful")
-	if err := applyMIGModeOnly(opts); err != nil || assertMIGModeOnly(opts) != nil {
+	if err := opts.applyMIGModeOnly(); err != nil || opts.assertMIGModeOnly() != nil {
 		if opts.WithReboot {
-			log.Infof("Changing the '%s' node label to '%s'", vGPUConfigStateLabel, configStateRebooting)
-			if err := setNodeLabelValue(clientset, vGPUConfigStateLabel, configStateRebooting); err != nil {
-				log.Errorf("Unable to set the value of '%s' to '%s'", vGPUConfigStateLabel, configStateRebooting)
+			log.Infof("Changing the '%s' node label to '%s'", opts.configStateLabel, configStateRebooting)
+			if err := opts.setNodeLabelValue(opts.configStateLabel, configStateRebooting); err != nil {
+				log.Errorf("Unable to set the value of '%s' to '%s'", opts.configStateLabel, configStateRebooting)
 				log.Error("Exiting so as not to reboot multiple times unexpectedly")
 				return err
 			}
@@ -179,13 +113,13 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 	}
 
 	log.Info("Applying the selected MIG config to the node")
-	if err := applyMIGConfig(opts); err != nil {
+	if err := opts.applyMIGConfig(); err != nil {
 		return err
 	}
 
 	if opts.WithShutdownHostGPUClients {
 		log.Info("Restarting all GPU clients previously shutdown on the host by restarting their systemd services")
-		if err := hostStartSystemdServices(opts); err != nil {
+		if err := opts.hostStartSystemdServices(); err != nil {
 			log.Error("Unable to restart GPU clients on host by restarting their systemd services")
 			return err
 		}
@@ -194,7 +128,7 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 	return nil
 }
 
-func assertValidMIGConfig(opts *reconfigureMIGOptions) error {
+func (opts *reconfigureMIGOptions) assertValidMIGConfig() error {
 	args := []string{
 		"--debug",
 		"assert",
@@ -202,22 +136,20 @@ func assertValidMIGConfig(opts *reconfigureMIGOptions) error {
 		"--config-file", opts.MIGPartedConfigFile,
 		"--selected-config", opts.SelectedMIGConfig,
 	}
-	cmd := migPartedCmd(opts.DriverLibraryPath, args...)
-	return runCommandWithOutput(cmd)
+	return opts.runMigParted(args...)
 }
 
-func assertMIGConfig(opts *reconfigureMIGOptions) error {
+func (opts *reconfigureMIGOptions) assertMIGConfig() error {
 	args := []string{
 		"--debug",
 		"assert",
 		"--config-file", opts.MIGPartedConfigFile,
 		"--selected-config", opts.SelectedMIGConfig,
 	}
-	cmd := migPartedCmd(opts.DriverLibraryPath, args...)
-	return runCommandWithOutput(cmd)
+	return opts.runMigParted(args...)
 }
 
-func assertMIGModeOnly(opts *reconfigureMIGOptions) error {
+func (opts *reconfigureMIGOptions) assertMIGModeOnly() error {
 	args := []string{
 		"--debug",
 		"assert",
@@ -225,11 +157,10 @@ func assertMIGModeOnly(opts *reconfigureMIGOptions) error {
 		"--config-file", opts.MIGPartedConfigFile,
 		"--selected-config", opts.SelectedMIGConfig,
 	}
-	cmd := migPartedCmd(opts.DriverLibraryPath, args...)
-	return runCommandWithOutput(cmd)
+	return opts.runMigParted(args...)
 }
 
-func applyMIGModeOnly(opts *reconfigureMIGOptions) error {
+func (opts *reconfigureMIGOptions) applyMIGModeOnly() error {
 	args := []string{
 		"--debug",
 		"apply",
@@ -237,22 +168,20 @@ func applyMIGModeOnly(opts *reconfigureMIGOptions) error {
 		"--config-file", opts.MIGPartedConfigFile,
 		"--selected-config", opts.SelectedMIGConfig,
 	}
-	cmd := migPartedCmd(opts.DriverLibraryPath, args...)
-	return runCommandWithOutput(cmd)
+	return opts.runMigParted(args...)
 }
 
-func applyMIGConfig(opts *reconfigureMIGOptions) error {
+func (opts *reconfigureMIGOptions) applyMIGConfig() error {
 	args := []string{
 		"--debug",
 		"apply",
 		"--config-file", opts.MIGPartedConfigFile,
 		"--selected-config", opts.SelectedMIGConfig,
 	}
-	cmd := migPartedCmd(opts.DriverLibraryPath, args...)
-	return runCommandWithOutput(cmd)
+	return opts.runMigParted(args...)
 }
 
-func hostPersistConfig(opts *reconfigureMIGOptions) error {
+func (opts *reconfigureMIGOptions) hostPersistConfig() error {
 	config := fmt.Sprintf(`[Service]
 Environment="MIG_PARTED_SELECTED_CONFIG=%s"
 `, opts.SelectedMIGConfig)
@@ -267,8 +196,8 @@ Environment="MIG_PARTED_SELECTED_CONFIG=%s"
 	return runCommandWithOutput(cmd)
 }
 
-func hostStopSystemdServices(opts *reconfigureMIGOptions) error {
-	hostGPUClientServicesStopped = []string{}
+func (opts *reconfigureMIGOptions) hostStopSystemdServices() error {
+	opts.hostGPUClientServicesStopped = []string{}
 
 	for _, service := range opts.HostGPUClientServices {
 		if err := processSystemdService(opts, service, "stop"); err != nil {
@@ -278,17 +207,17 @@ func hostStopSystemdServices(opts *reconfigureMIGOptions) error {
 	return nil
 }
 
-func hostStartSystemdServices(opts *reconfigureMIGOptions) error {
-	if len(hostGPUClientServicesStopped) == 0 {
+func (opts *reconfigureMIGOptions) hostStartSystemdServices() error {
+	if len(opts.hostGPUClientServicesStopped) == 0 {
 		for _, service := range opts.HostGPUClientServices {
 			if shouldRestartService(opts, service) {
-				hostGPUClientServicesStopped = append(hostGPUClientServicesStopped, service)
+				opts.hostGPUClientServicesStopped = append(opts.hostGPUClientServicesStopped, service)
 			}
 		}
 	}
 
 	retCode := 0
-	for _, service := range hostGPUClientServicesStopped {
+	for _, service := range opts.hostGPUClientServicesStopped {
 		log.Infof("Starting %s", service)
 		cmd := exec.Command("chroot", opts.HostRootMount, "systemctl", "start", service) // #nosec G204 -- HostRootMount validated via dirpath, service validated via systemd_service_name.
 		if err := cmd.Run(); err != nil {
@@ -312,7 +241,7 @@ func processSystemdService(opts *reconfigureMIGOptions, service, action string) 
 			return err
 		}
 		if action == "stop" {
-			hostGPUClientServicesStopped = append([]string{service}, hostGPUClientServicesStopped...)
+			opts.hostGPUClientServicesStopped = append([]string{service}, opts.hostGPUClientServicesStopped...)
 		}
 		return nil
 	}
@@ -327,7 +256,7 @@ func processSystemdService(opts *reconfigureMIGOptions, service, action string) 
 	if err := cmd.Run(); err == nil {
 		log.Infof("Skipping %s (is-failed, will-restart)", service)
 		if action == "stop" {
-			hostGPUClientServicesStopped = append([]string{service}, hostGPUClientServicesStopped...)
+			opts.hostGPUClientServicesStopped = append([]string{service}, opts.hostGPUClientServicesStopped...)
 		}
 		return nil
 	}
@@ -350,7 +279,7 @@ func processSystemdService(opts *reconfigureMIGOptions, service, action string) 
 
 	log.Infof("Skipping %s (inactive, will-restart)", service)
 	if action == "stop" {
-		hostGPUClientServicesStopped = append([]string{service}, hostGPUClientServicesStopped...)
+		opts.hostGPUClientServicesStopped = append([]string{service}, opts.hostGPUClientServicesStopped...)
 	}
 	return nil
 }
@@ -394,9 +323,14 @@ func runCommandWithOutput(cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
-func migPartedCmd(driverLibraryPath string, args ...string) *exec.Cmd {
+func (opts *reconfigureMIGOptions) runMigParted(args ...string) error {
+	cmd := opts.migPartedCmd(args...)
+	return runCommandWithOutput(cmd)
+}
+
+func (opts *reconfigureMIGOptions) migPartedCmd(args ...string) *exec.Cmd {
 	cmd := exec.Command(migPartedCliName, args...)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", ldPreloadEnvVar, driverLibraryPath))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", ldPreloadEnvVar, opts.DriverLibraryPath))
 	return cmd
 }
 
@@ -410,43 +344,33 @@ func rebootHost(hostRootMount string) error {
 	return nil
 }
 
-// validateSystemdServiceName validates a systemd service name according to systemd naming rules.
-// The unit name prefix must consist of one or more valid characters (ASCII letters, digits, ":", "-", "_", ".", and "\").
-// The total length of the unit name including the suffix must not exceed 255 characters.
-// The unit type suffix must be one of ".service", ".socket", ".device", ".mount", ".automount", ".swap", ".target", ".path", ".timer", ".slice", or ".scope".
-// Source: https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html
-func validateSystemdServiceName(fl validator.FieldLevel) bool {
-	serviceName := fl.Field().String()
-
-	if len(serviceName) == 0 || len(serviceName) > 255 {
-		return false
+func (opts *reconfigureMIGOptions) getNodeLabelValue(label string) (string, error) {
+	node, err := opts.clientset.CoreV1().Nodes().Get(context.TODO(), opts.NodeName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("unable to get node object: %v", err)
 	}
 
-	validSuffixes := []string{
-		".service",
-		".socket",
-		".device",
-		".mount",
-		".automount",
-		".swap",
-		".target",
-		".path",
-		".timer",
-		".slice",
-		".scope",
+	value, ok := node.Labels[label]
+	if !ok {
+		return "", nil
 	}
 
-	hasSuffix := false
-	for _, suffix := range validSuffixes {
-		if strings.HasSuffix(serviceName, suffix) {
-			hasSuffix = true
-			break
-		}
+	return value, nil
+}
+
+func (opts *reconfigureMIGOptions) setNodeLabelValue(label, value string) error {
+	node, err := opts.clientset.CoreV1().Nodes().Get(context.TODO(), opts.NodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to get node object: %v", err)
 	}
 
-	if !hasSuffix {
-		return false
+	labels := node.GetLabels()
+	labels[label] = value
+	node.SetLabels(labels)
+	_, err = opts.clientset.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to update node object: %v", err)
 	}
 
-	return systemdServicePrefixPattern.MatchString(serviceName)
+	return nil
 }
