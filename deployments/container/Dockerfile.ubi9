@@ -40,7 +40,7 @@ RUN make PREFIX=/artifacts cmds
 
 FROM nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.12.1-ubi9 as mig-manager
 
-FROM nvcr.io/nvidia/distroless/go:v3.1.10-dev
+FROM nvcr.io/nvidia/distroless/go:v3.1.11-dev
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
