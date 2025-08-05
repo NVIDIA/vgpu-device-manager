@@ -1,4 +1,5 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+#!/bin/bash
+# Copyright 2025 NVIDIA CORPORATION
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,10 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GOLANG_VERSION
-FROM golang:${GOLANG_VERSION}
 
-RUN go install golang.org/x/lint/golint@latest
-RUN go install github.com/matryer/moq@latest
-RUN go install github.com/gordonklaus/ineffassign@latest
-RUN go install github.com/client9/misspell/cmd/misspell@latest
+SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/../hack && pwd )"
+
+DOCKERFILE_ROOT=${SCRIPTS_DIR}/../deployments/devel
+
+GOLANG_VERSION=$(grep -E "^FROM golang:.*$" ${DOCKERFILE_ROOT}/Dockerfile | grep -oE "[0-9\.]+")
+
+echo $GOLANG_VERSION
