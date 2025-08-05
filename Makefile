@@ -19,13 +19,13 @@ DOCKER ?= docker
 include $(CURDIR)/versions.mk
 
 BUILDIMAGE_TAG ?= golang$(GOLANG_VERSION)
-BUILDIMAGE ?= vgpu-device-manager-build
+BUILDIMAGE ?= vgpu-device-manager-build:$(BUILDIMAGE_TAG)
 
 CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
 CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
 
 CHECK_TARGETS := assert-fmt vet lint ineffassign misspell
-MAKE_TARGETS := binaries build check fmt lint-internal test examples cmds coverage generate $(CHECK_TARGETS)
+MAKE_TARGETS := binaries build check fmt lint-internal test examples cmds coverage generate $(CHECK_TARGETS) $(CMD_TARGETS)
 
 TARGETS := $(MAKE_TARGETS)
 
@@ -75,31 +75,27 @@ coverage: test
 	cat $(COVERAGE_FILE) | grep -v "_mock.go" > $(COVERAGE_FILE).no-mocks
 	go tool cover -func=$(COVERAGE_FILE).no-mocks
 
-
-.PHONY: .build-image .pull-build-image .push-build-image
-.build-image: docker/Dockerfile.devel
+# Generate an image for containerized builds
+# Note: This image is local only
+.PHONY: .build-image
+.build-image: deployments/devel/Dockerfile
 	if [ x"$(SKIP_IMAGE_BUILD)" = x"" ]; then \
 		$(DOCKER) build \
 			--progress=plain \
-			--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
 			--tag $(BUILDIMAGE) \
 			-f $(^) \
-			docker; \
+			deployments/devel; \
 	fi
-
-.pull-build-image:
-	$(DOCKER) pull $(BUILDIMAGE)
-
-.push-build-image:
-	$(DOCKER) push $(BUILDIMAGE)
 
 $(DOCKER_TARGETS): docker-%: .build-image
 	@echo "Running 'make $(*)' in docker container $(BUILDIMAGE)"
 	$(DOCKER) run \
 		--rm \
-		-e GOCACHE=/tmp/.cache \
-		-v $(PWD):$(PWD) \
-		-w $(PWD) \
+		-e GOCACHE=/tmp/.cache/go \
+		-e GOMODCACHE=/tmp/.cache/gomod \
+		-e GOLANGCI_LINT_CACHE=/tmp/.cache/golangci-lint \
+		-v $(PWD):/work \
+		-w /work \
 		--user $$(id -u):$$(id -g) \
 		$(BUILDIMAGE) \
 			make $(*)
