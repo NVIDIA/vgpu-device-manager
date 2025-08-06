@@ -312,7 +312,70 @@ func TestVGPUConfigSpecSliceToMigConfigSpecSlice(t *testing.T) {
 					Devices:    "all",
 					MigEnabled: true,
 					MigDevices: migtypes.MigConfig{
-						"1g.5gb.me": 2,
+						"1g.5gb+me": 2,
+					},
+				},
+			},
+			"",
+		},
+		{
+			"MIG-backed vGPU type with no media extensions",
+			VGPUConfigSpecSlice{
+				{
+					Devices: "all",
+					VGPUDevices: types.VGPUConfig{
+						"A100-1-5CNOME": 2,
+					},
+				},
+			},
+			migpartedv1.MigConfigSpecSlice{
+				{
+					Devices:    "all",
+					MigEnabled: true,
+					MigDevices: migtypes.MigConfig{
+						"1g.5gb-me": 2,
+					},
+				},
+			},
+			"",
+		},
+		{
+			"MIG-backed vGPU type with all media extensions",
+			VGPUConfigSpecSlice{
+				{
+					Devices: "all",
+					VGPUDevices: types.VGPUConfig{
+						"A100-1-5CMEALL": 2,
+					},
+				},
+			},
+			migpartedv1.MigConfigSpecSlice{
+				{
+					Devices:    "all",
+					MigEnabled: true,
+					MigDevices: migtypes.MigConfig{
+						"1g.5gb+me.all": 2,
+					},
+				},
+			},
+			"",
+		},
+		{
+			"MIG-backed vGPU type with graphics extensions",
+			VGPUConfigSpecSlice{
+				{
+					Devices: "all",
+					VGPUDevices: types.VGPUConfig{
+						"A100-1-5CGFX": 2,
+					},
+				},
+			},
+			migpartedv1.MigConfigSpecSlice{
+				{
+					Devices:    "all",
+					MigEnabled: true,
+					MigDevices: migtypes.MigConfig{
+						"1g.5gb+gfx": 2,
 					},
 				},
 			},
