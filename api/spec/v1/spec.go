@@ -39,7 +39,7 @@ type Spec struct {
 type VGPUConfigSpec struct {
 	DeviceFilter interface{}      `json:"device-filter,omitempty" yaml:"device-filter,flow,omitempty"`
 	Devices      interface{}      `json:"devices"                 yaml:"devices,flow"`
-	VGPUDevices  types.VGPUConfig `json:"vgpu-devices"             yaml:"vgpu-devices"`
+	VGPUDevices  types.VGPUConfig `json:"vgpu-devices"            yaml:"vgpu-devices"`
 }
 
 // VGPUConfigSpecSlice represents a slice of 'VGPUConfigSpec'.
@@ -184,9 +184,15 @@ func (s VGPUConfigSpecSlice) ToMigConfigSpecSlice() (migpartedv1.MigConfigSpecSl
 				migEnabled = true
 				migProfile := fmt.Sprintf("%dg.%dgb", vgpu.G, vgpu.GB)
 				for _, attr := range vgpu.Attr {
-					if attr == types.AttributeMediaExtensions {
-						migProfile += ".me"
-						break
+					switch attr {
+					case types.AttributeMediaExtensions:
+						migProfile += "+me"
+					case types.AttributeNoMediaExtensions:
+						migProfile += "-me"
+					case types.AttributeMediaExtensionsAll:
+						migProfile += "+me.all"
+					case types.AttributeGraphics:
+						migProfile += "+gfx"
 					}
 				}
 				migSpec.MigDevices[migProfile] = vgpuSpec.VGPUDevices[vgpuType]
