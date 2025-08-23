@@ -39,7 +39,7 @@ jobs:
       matrix:
         dist: [ubi9]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Calculate build vars
         id: vars
