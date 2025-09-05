@@ -11,7 +11,7 @@ github.com/NVIDIA/go-nvlib/pkg/pciids
 github.com/NVIDIA/go-nvml/pkg/dl
 github.com/NVIDIA/go-nvml/pkg/nvml
 github.com/NVIDIA/go-nvml/pkg/nvml/mock
-# github.com/NVIDIA/mig-parted v0.12.2
+# github.com/NVIDIA/mig-parted v0.12.3
 ## explicit; go 1.24.0
 github.com/NVIDIA/mig-parted/api/spec/v1
 github.com/NVIDIA/mig-parted/internal/nvlib/mig
