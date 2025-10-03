@@ -27,7 +27,7 @@ REGISTRY ?= nvidia
 IMAGE_NAME := $(REGISTRY)/vgpu-device-manager
 endif
 
-GOPROXY ?= direct
+GOPROXY ?= https://proxy.golang.org,direct
 
 IMAGE_VERSION := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_VERSION)
