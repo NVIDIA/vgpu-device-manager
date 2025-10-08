@@ -62,6 +62,9 @@ func Generate(c *cli.Context, f *flags) error {
 
 	// The default configuration will contain one entry per physical GPU supported
 	defaultConfig := v1.VGPUConfigSpecSlice{}
+	// deviceIDsInDefaultConfig helps keep track of which GPUs have already been added
+	// to the default config slice. This helps avoid adding duplicates.
+	deviceIDsInDefaultConfig := map[string]bool{}
 
 	for _, p := range xmlFile.PGPUs {
 		// Mapping VGPU series to the list of supported VGPU types for the PGPU.
@@ -137,6 +140,12 @@ func Generate(c *cli.Context, f *flags) error {
 		deviceFilter, err := getDeviceFilterString(p.DeviceID)
 		if err != nil {
 			return fmt.Errorf("error getting device filter: %v", err)
+		}
+		if _, ok := deviceIDsInDefaultConfig[deviceFilter]; !ok {
+			deviceIDsInDefaultConfig[deviceFilter] = true
+		} else {
+			// avoid adding a duplicate entry to the 'default' config
+			continue
 		}
 
 		// Add default config entry for the PGPU
