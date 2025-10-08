@@ -1,5 +1,29 @@
 version: v1
 vgpu-configs:
+    6000D-1-42C:
+        - devices: all
+          vgpu-devices:
+            6000D-1-42C: 2
+    6000D-1-42Q:
+        - devices: all
+          vgpu-devices:
+            6000D-1-42Q: 2
+    6000D-2-84C:
+        - devices: all
+          vgpu-devices:
+            6000D-2-84C: 1
+    6000D-2-84Q:
+        - devices: all
+          vgpu-devices:
+            6000D-2-84Q: 1
+    6000D-84C:
+        - devices: all
+          vgpu-devices:
+            6000D-84C: 1
+    6000D-84Q:
+        - devices: all
+          vgpu-devices:
+            6000D-84Q: 1
     A2-1Q:
         - devices: all
           vgpu-devices:
@@ -2689,18 +2713,10 @@ vgpu-configs:
           devices: all
           vgpu-devices:
             A100D-40C: 2
-        - device-filter: "0x20B510DE"
-          devices: all
-          vgpu-devices:
-            A100D-40C: 2
         - device-filter: "0x20B810DE"
           devices: all
           vgpu-devices:
             A100D-40C: 2
-        - device-filter: "0x20B710DE"
-          devices: all
-          vgpu-devices:
-            A30-12C: 2
         - device-filter: "0x20B710DE"
           devices: all
           vgpu-devices:
@@ -2761,14 +2777,6 @@ vgpu-configs:
           devices: all
           vgpu-devices:
             H800XM-40C: 2
-        - device-filter: "0x232410DE"
-          devices: all
-          vgpu-devices:
-            H800XM-40C: 2
-        - device-filter: "0x232910DE"
-          devices: all
-          vgpu-devices:
-            H20-48C: 2
         - device-filter: "0x232910DE"
           devices: all
           vgpu-devices:
@@ -2777,14 +2785,6 @@ vgpu-configs:
           devices: all
           vgpu-devices:
             H20X-70C: 2
-        - device-filter: "0x232C10DE"
-          devices: all
-          vgpu-devices:
-            H20X-70C: 2
-        - device-filter: "0x233010DE"
-          devices: all
-          vgpu-devices:
-            H100XM-40C: 2
         - device-filter: "0x233010DE"
           devices: all
           vgpu-devices:
@@ -2797,10 +2797,6 @@ vgpu-configs:
           devices: all
           vgpu-devices:
             H100-40C: 2
-        - device-filter: "0x233510DE"
-          devices: all
-          vgpu-devices:
-            H200X-70C: 2
         - device-filter: "0x233510DE"
           devices: all
           vgpu-devices:
@@ -2861,10 +2857,6 @@ vgpu-configs:
           devices: all
           vgpu-devices:
             L20-24Q: 2
-        - device-filter: "0x26BA10DE"
-          devices: all
-          vgpu-devices:
-            L20-24Q: 2
         - device-filter: "0x27B610DE"
           devices: all
           vgpu-devices:
@@ -2885,3 +2877,7 @@ vgpu-configs:
           devices: all
           vgpu-devices:
             DC-48Q: 2
+        - device-filter: "0x2BB910DE"
+          devices: all
+          vgpu-devices:
+            6000D-84Q: 1
