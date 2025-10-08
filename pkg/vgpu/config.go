@@ -95,10 +95,24 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
 	// the config are supported for the GPU we are applying the configuration to.
-	for key := range config {
+	//
+	// For MIG-backed vGPU types, it may be required to strip the MIG attribute suffix
+	// from the vGPU type name before creating the vGPU device. For example, for RTX Pro
+	// 6000 Blackwell, all the MIG-backed vGPU types are only supported on MIG instances
+	// created with the GFX attribute, but none of the vGPU type names contain the GFX
+	// suffix. Taking the DC-1-24QGFX config as an example, the below code would first
+	// check if DC-1-24QGFX is a valid vGPU type. Since it is not a valid type, it would
+	// strip the GFX suffix and proceed to check if DC-1-24Q is a valid type.
+	sanitizedConfig := types.VGPUConfig{}
+	for key, val := range config {
 		strippedKey := stripVGPUConfigSuffix(key)
-		if !parents[0].IsMDEVTypeSupported(strippedKey) {
-			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", strippedKey, gpu, device.Address)
+		//nolint:gocritic // using if-else for clarity instead of switch
+		if parents[0].IsMDEVTypeSupported(key) {
+			sanitizedConfig[key] = val
+		} else if parents[0].IsMDEVTypeSupported(strippedKey) {
+			sanitizedConfig[strippedKey] = val
+		} else {
+			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
 		}
 	}
 
@@ -107,20 +121,19 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 		return fmt.Errorf("error clearing VGPUConfig: %v", err)
 	}
 
-	for key, val := range config {
-		strippedKey := stripVGPUConfigSuffix(key)
+	for key, val := range sanitizedConfig {
 		remainingToCreate := val
 		for _, parent := range parents {
 			if remainingToCreate == 0 {
 				break
 			}
 
-			supported := parent.IsMDEVTypeSupported(strippedKey)
+			supported := parent.IsMDEVTypeSupported(key)
 			if !supported {
-				return fmt.Errorf("vGPU type %s is not supported on GPU %s", strippedKey, device.Address)
+				return fmt.Errorf("vGPU type %s is not supported on GPU %s", key, device.Address)
 			}
 
-			available, err := parent.GetAvailableMDEVInstances(strippedKey)
+			available, err := parent.GetAvailableMDEVInstances(key)
 			if err != nil {
 				return fmt.Errorf("error getting available vGPU instances: %v", err)
 			}
@@ -131,16 +144,16 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 
 			numToCreate := min(remainingToCreate, available)
 			for i := 0; i < numToCreate; i++ {
-				err = parent.CreateMDEVDevice(strippedKey, uuid.New().String())
+				err = parent.CreateMDEVDevice(key, uuid.New().String())
 				if err != nil {
-					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %w", strippedKey, parent.Address, err)
+					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %w", key, parent.Address, err)
 				}
 			}
 			remainingToCreate -= numToCreate
 		}
 
 		if remainingToCreate > 0 {
-			return fmt.Errorf("failed to create %[1]d %[2]s vGPU devices on the GPU. ensure '%[1]d' does not exceed the maximum supported instances for '%[2]s'", val, strippedKey)
+			return fmt.Errorf("failed to create %[1]d %[2]s vGPU devices on the GPU. ensure '%[1]d' does not exceed the maximum supported instances for '%[2]s'", val, key)
 		}
 	}
 	return nil
