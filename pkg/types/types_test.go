@@ -129,6 +129,21 @@ func TestParseVGPUType(t *testing.T) {
 			true,
 		},
 		{
+			"Valid A100-1-5CNOME",
+			"A100-1-5CNOME",
+			true,
+		},
+		{
+			"Valid A100-1-5CMEALL",
+			"A100-1-5CMEALL",
+			true,
+		},
+		{
+			"Valid A100-1-5CGFX",
+			"A100-1-5CGFX",
+			true,
+		},
+		{
 			"Invalid 'A100-1-5Cme'",
 			"A100-1-5Cme",
 			false,

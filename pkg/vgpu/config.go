@@ -18,6 +18,7 @@ package vgpu
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/google/uuid"
@@ -94,8 +95,23 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
 	// the config are supported for the GPU we are applying the configuration to.
-	for key := range config {
-		if !parents[0].IsMDEVTypeSupported(key) {
+	//
+	// For MIG-backed vGPU types, it may be required to strip the MIG attribute suffix
+	// from the vGPU type name before creating the vGPU device. For example, for RTX Pro
+	// 6000 Blackwell, all the MIG-backed vGPU types are only supported on MIG instances
+	// created with the GFX attribute, but none of the vGPU type names contain the GFX
+	// suffix. Taking the DC-1-24QGFX config as an example, the below code would first
+	// check if DC-1-24QGFX is a valid vGPU type. Since it is not a valid type, it would
+	// strip the GFX suffix and proceed to check if DC-1-24Q is a valid type.
+	sanitizedConfig := types.VGPUConfig{}
+	for key, val := range config {
+		strippedKey := stripVGPUConfigSuffix(key)
+		//nolint:gocritic // using if-else for clarity instead of switch
+		if parents[0].IsMDEVTypeSupported(key) {
+			sanitizedConfig[key] = val
+		} else if parents[0].IsMDEVTypeSupported(strippedKey) {
+			sanitizedConfig[strippedKey] = val
+		} else {
 			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
 		}
 	}
@@ -105,7 +121,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 		return fmt.Errorf("error clearing VGPUConfig: %v", err)
 	}
 
-	for key, val := range config {
+	for key, val := range sanitizedConfig {
 		remainingToCreate := val
 		for _, parent := range parents {
 			if remainingToCreate == 0 {
@@ -130,7 +146,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 			for i := 0; i < numToCreate; i++ {
 				err = parent.CreateMDEVDevice(key, uuid.New().String())
 				if err != nil {
-					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.Address, err)
+					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %w", key, parent.Address, err)
 				}
 			}
 			remainingToCreate -= numToCreate
@@ -173,4 +189,21 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// stripVGPUConfigSuffix removes MIG profile attribute suffixes (ME, NOME, MEALL, GFX) from vGPU config type names
+func stripVGPUConfigSuffix(configType string) string {
+	suffixes := []string{
+		types.AttributeMediaExtensionsAll, // MEALL - check first as it contains ME
+		types.AttributeNoMediaExtensions,  // NOME
+		types.AttributeMediaExtensions,    // ME
+		types.AttributeGraphics,           // GFX
+	}
+
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(configType, suffix) {
+			return strings.TrimSuffix(configType, suffix)
+		}
+	}
+	return configType
 }

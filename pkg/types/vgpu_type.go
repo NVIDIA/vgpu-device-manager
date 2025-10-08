@@ -23,8 +23,15 @@ import (
 )
 
 const (
-	// AttributeMediaExtensions holds the string representation for the media extension MIG profile attribute.
+	// AttributeMediaExtensions holds the string representation for the +me MIG profile attribute.
 	AttributeMediaExtensions = "ME"
+	// AttributeNoMediaExtensions holds the string representation for the -me MIG profile attribute.
+	AttributeNoMediaExtensions = "NOME"
+	// AttributeMediaExtensionsAll holds the string representation for the +me.all MIG profile attribute.
+	AttributeMediaExtensionsAll = "MEALL"
+	// AttributeGraphics holds the string representation for the +gfx MIG profile attribute.
+	AttributeGraphics = "GFX"
+
 	// timeSlicedRegex represents the format for a time-sliced, vGPU type name.
 	// It embeds the GPU type, framebuffer size in GB, and a letter representing the 'series'.
 	// Note: The framebuffer size can be '0' to represent 512MB (i.e. M60-0Q).
@@ -32,13 +39,13 @@ const (
 	// migBackedRegex represents the format for a MIG-backed, vGPU type name.
 	// In addition to embedding all of the fields from 'timeSlicedRegex', it also
 	// contains the number of GPU instances and any additional attributes (i.e. media extensions).
-	migBackedRegex = "^(?P<GPU>[A-Z0-9]+)-(?P<G>[1-9])-(?P<GB>0|[1-9][0-9]*)(?P<S>A|B|C|Q)(?P<ME>ME)?$"
+	migBackedRegex = "^(?P<GPU>[A-Z0-9]+)-(?P<G>[1-9])-(?P<GB>0|[1-9][0-9]*)(?P<S>A|B|C|Q)(?P<ATTR>(ME|NOME|MEALL|GFX))?$"
 )
 
 // VGPUType represents a specific vGPU type.
 // Time-sliced vGPU types appear as <gpu>-<gb><series>.
-// MIG-backed vGPU types appear as <gpu>-<g>-<gb><series>[ME]
-// Examples include "A100-40C", "A100D-80C", "A100-1-5C", "A100-1-5CME", etc.
+// MIG-backed vGPU types appear as <gpu>-<g>-<gb><series>[ME, NOME, MEALL, GFX].
+// Examples include "A100-40C", "A100D-80C", "A100-1-5C", "A100-1-5CME", "DC-1-24CGFX" etc.
 type VGPUType struct {
 	GPU  string
 	G    int
@@ -88,9 +95,9 @@ func ParseVGPUType(s string) (*VGPUType, error) {
 		if err != nil {
 			return nil, fmt.Errorf("malformed number for GPU instances '%s'", gStr)
 		}
-		mediaExtension, ok := captureGroups["ME"]
+		attribute, ok := captureGroups["ATTR"]
 		if ok {
-			attr = append(attr, mediaExtension)
+			attr = append(attr, attribute)
 		}
 	}
 
