@@ -89,6 +89,17 @@ func Generate(c *cli.Context, f *flags) error {
 
 			// Add entry for this vGPU Type in the config
 			vgpuTypeStr := vgpuType.String()
+			// vGPU only supports the +gfx MIG profiles on RTX Pro 6000 Blackwell.
+			// The vgpuConfig.xml file does not indicate that the +gfx MIG attribute
+			// is required for any of the MIG-backed vGPU instances on the RTX Pro
+			// 6000 Blackwell, so the below workaround is needed to add the "GFX" suffix
+			// to the config name for these profiles. The vgpu-manager is able to parse
+			// this suffix when mapping a vGPU profile name to the MIG profile backing it.
+			if (strings.HasPrefix(_type.Name, "NVIDIA RTX Pro 6000") ||
+				strings.HasPrefix(_type.Name, "NVIDIA RTX 6000D")) &&
+				vgpuType.G > 0 {
+				vgpuTypeStr = vgpuTypeStr + "GFX"
+			}
 			spec.VGPUConfigs[vgpuTypeStr] = v1.VGPUConfigSpecSlice{
 				v1.VGPUConfigSpec{
 					Devices: "all",
