@@ -3,12 +3,12 @@ module github.com/NVIDIA/vgpu-device-manager
 go 1.24.0
 
 require (
-	github.com/NVIDIA/go-nvlib v0.8.0
+	github.com/NVIDIA/go-nvlib v0.8.1
 	github.com/NVIDIA/mig-parted v0.12.3
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.7
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
@@ -17,7 +17,7 @@ require (
 )
 
 require (
-	github.com/NVIDIA/go-nvml v0.13.0-0 // indirect
+	github.com/NVIDIA/go-nvml v0.13.0-1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
