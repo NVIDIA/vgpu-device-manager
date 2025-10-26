@@ -2,8 +2,8 @@ github.com/NVIDIA/go-nvlib v0.8.1 h1:OPEHVvn3zcV5OXB68A7WRpeCnYMRSPl7LdeJH/d3gZI
 github.com/NVIDIA/go-nvlib v0.8.1/go.mod h1:7mzx9FSdO9fXWP9NKuZmWkCwhkEcSWQFe2tmFwtLb9c=
 github.com/NVIDIA/go-nvml v0.13.0-1 h1:OLX8Jq3dONuPOQPC7rndB6+iDmDakw0XTYgzMxObkEw=
 github.com/NVIDIA/go-nvml v0.13.0-1/go.mod h1:+KNA7c7gIBH7SKSJ1ntlwkfN80zdx8ovl4hrK3LmPt4=
-github.com/NVIDIA/mig-parted v0.12.3 h1:ZBKsrHL97av6Su6VseI5bPj+1pHDoxUjKRNsn/XoCc4=
-github.com/NVIDIA/mig-parted v0.12.3/go.mod h1:6SUUqi8RRlyKz9iccsqvMTEJZnTLCqUEOcBQzI+q3Ok=
+github.com/NVIDIA/mig-parted v0.13.0 h1:TTMwqaFCTigF3vGNu2spCywlvdak+5lz3KEkn4i/a+M=
+github.com/NVIDIA/mig-parted v0.13.0/go.mod h1:6l4VkNzkXYDi/KkJfphfX1dmDyteLZcIvkOwGB3CZHs=
 github.com/cpuguy83/go-md2man/v2 v2.0.7 h1:zbFlGlXEAKlwXpmvle3d8Oe3YnkKIK4xSRTd3sHPnBo=
 github.com/cpuguy83/go-md2man/v2 v2.0.7/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
