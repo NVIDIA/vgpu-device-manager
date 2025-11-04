@@ -14,10 +14,6 @@
 
 BUILD_MULTI_ARCH_IMAGES ?= no
 DOCKER ?= docker
-BUILDX =
-ifeq ($(BUILD_MULTI_ARCH_IMAGES),true)
-BUILDX = buildx
-endif
 
 ##### Global variables #####
 include $(CURDIR)/versions.mk
@@ -37,8 +33,8 @@ OUT_IMAGE_VERSION ?= $(IMAGE_VERSION)
 OUT_IMAGE = $(OUT_IMAGE_NAME):$(OUT_IMAGE_VERSION)
 
 ##### Public rules #####
-DISTRIBUTIONS := ubi9
-DEFAULT_PUSH_TARGET := ubi9
+DISTRIBUTIONS := distroless
+DEFAULT_PUSH_TARGET := distroless
 
 PUSH_TARGETS := $(patsubst %, push-%, $(DISTRIBUTIONS))
 BUILD_TARGETS := $(patsubst %, build-%, $(DISTRIBUTIONS))
@@ -52,25 +48,27 @@ else
 include $(CURDIR)/deployments/container/multi-arch.mk
 endif
 
-push-%: DIST = $(*)
+# Both distroless and build-distroless trigger a build of the relevant image
+$(DISTRIBUTIONS): %: build-%
 
-
-build-%: DIST = $(*)
 build-%: DOCKERFILE_SUFFIX = $(*)
 build-%: DOCKERFILE = $(CURDIR)/deployments/container/Dockerfile.$(DOCKERFILE_SUFFIX)
-
-# Both ubi9 and build-ubi9 trigger a build of the relevant image
-$(DISTRIBUTIONS): %: build-%
 $(BUILD_TARGETS): build-%:
-	DOCKER_BUILDKIT=1 \
-		$(DOCKER) $(BUILDX) build --pull \
-			$(DOCKER_BUILD_OPTIONS) \
-			$(DOCKER_BUILD_PLATFORM_OPTIONS) \
-			--tag $(IMAGE) \
-			--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-			--build-arg VERSION="$(VERSION)" \
-			--build-arg GIT_COMMIT="$(GIT_COMMIT)" \
-			--build-arg CVE_UPDATES="$(CVE_UPDATES)" \
-			--build-arg GOPROXY="$(GOPROXY)" \
-			--file $(DOCKERFILE) \
-			$(CURDIR)
+	$(DOCKER) build --pull \
+		$(DOCKER_BUILD_OPTIONS) \
+		$(DOCKER_BUILD_PLATFORM_OPTIONS) \
+		--tag $(IMAGE) \
+		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg VERSION="$(VERSION)" \
+		--build-arg GIT_COMMIT="$(GIT_COMMIT)" \
+		--build-arg CVE_UPDATES="$(CVE_UPDATES)" \
+		--build-arg GOPROXY="$(GOPROXY)" \
+		--file $(DOCKERFILE) \
+		$(CURDIR)
+ifeq ($(PUSH_ON_BUILD),true)
+	$(DOCKER) push "$(IMAGE)"
+endif
+
+# Handle the default build target.
+.PHONY: build
+build: $(DEFAULT_PUSH_TARGET)
