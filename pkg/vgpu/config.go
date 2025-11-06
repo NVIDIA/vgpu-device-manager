@@ -19,12 +19,21 @@ package vgpu
 import (
 	"fmt"
 	"strings"
+	"os"
+	"strconv"
+	"bufio"
+	"os/exec"
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/google/uuid"
 
 	"github.com/NVIDIA/vgpu-device-manager/internal/nvlib"
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
+)
+
+const (
+	PCIDevicesRoot = "/sys/bus/pci/devices"
 )
 
 // Manager represents a set of functions for managing vGPU configurations on a node
@@ -32,6 +41,9 @@ type Manager interface {
 	GetVGPUConfig(gpu int) (types.VGPUConfig, error)
 	SetVGPUConfig(gpu int, config types.VGPUConfig) error
 	ClearVGPUConfig(gpu int) error
+	IsUbuntu2404() (bool, error)
+	GetVGPUConfigforVFIO(gpu int) (types.VGPUConfig, error)
+	SetVGPUConfigforVFIO(gpu int, config types.VGPUConfig) error
 }
 
 type nvlibVGPUConfigManager struct {
@@ -43,6 +55,179 @@ var _ Manager = (*nvlibVGPUConfigManager)(nil)
 // NewNvlibVGPUConfigManager returns a new vGPU Config Manager which uses go-nvlib when creating / deleting vGPU devices
 func NewNvlibVGPUConfigManager() Manager {
 	return &nvlibVGPUConfigManager{nvlib.New()}
+}
+
+func (m *nvlibVGPUConfigManager) GetAllNvidiaGPUDevices() ([]*nvpci.NvidiaPCIDevice, error) {
+	var nvdevices []*nvpci.NvidiaPCIDevice
+	deviceDirs, err := os.ReadDir(PCIDevicesRoot)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read parent PCI bus devices: %v", err)
+	}
+	for _, deviceDir := range deviceDirs {
+		deviceAddress := deviceDir.Name()
+		nvdevice, err := m.nvlib.Nvpci.GetGPUByPciBusID(deviceAddress)
+		if err != nil || nvdevice == nil {
+			continue
+		}
+		if nvdevice.IsGPU() {
+			nvdevices = append(nvdevices, nvdevice)
+		}
+	}
+	return nvdevices, nil
+}
+
+func (m *nvlibVGPUConfigManager) GetVGPUConfigforVFIO(gpu int) (types.VGPUConfig, error) {
+	nvdevice, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
+	}
+	GPUDevices, err := m.nvlib.Nvpci.GetGPUs()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get all NVIDIA GPU devices: %v", err)
+	}
+
+	vgpuConfig := types.VGPUConfig{}
+	for _, device := range GPUDevices {
+		if device.Address == nvdevice.Address {
+			VFnum := 0
+			totalVF := int(nvdevice.SriovInfo.PhysicalFunction.TotalVFs)
+			for VFnum < totalVF {
+				VFAddr := PCIDevicesRoot + "/" + device.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
+				if _, err := os.Stat(VFAddr); err == nil {
+					VGPUTypeNumberBytes, err := os.ReadFile(VFAddr + "/current_vgpu_type")
+					if err != nil {
+						return nil, fmt.Errorf("unable to read current vGPU type: %v", err)
+					}
+					VGPUTypeNumber, err := strconv.Atoi(string(VGPUTypeNumberBytes))
+					if err != nil {
+						return nil, fmt.Errorf("unable to convert current vGPU type to int: %v", err)
+					}
+					VGPUTypeName, err := m.getVGPUTypeNameforVFIO(VFAddr + "/creatable_vgpu_types", VGPUTypeNumber)
+					if err != nil {
+						return nil, fmt.Errorf("unable to get vGPU type name: %v", err)
+					}
+					vgpuConfig[VGPUTypeName]++
+				}
+				VFnum++
+			}
+		}
+	}
+	
+	return vgpuConfig, nil
+}
+
+//// Set the vGPU config for each GPU if it is in nvdevices 
+func (m *nvlibVGPUConfigManager) SetVGPUConfigforVFIO(gpu int, config types.VGPUConfig) error {
+	nvdevice, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
+	if err != nil {
+		return fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
+	}
+	
+	GPUDevices, err := m.nvlib.Nvpci.GetGPUs()
+	if err != nil {
+		return fmt.Errorf("unable to get all NVIDIA GPU devices: %v", err)
+	}
+	
+	deviceFound := false
+	for _, device := range GPUDevices {
+		if device.Address == nvdevice.Address {
+			deviceFound = true
+			break
+		}
+	}
+	if !deviceFound {
+		return fmt.Errorf("GPU at index %d not found in available NVIDIA devices", gpu)
+	}
+
+	err = m.ClearVGPUConfig(gpu)
+	if err != nil {
+		return fmt.Errorf("error clearing VGPUConfig: %v", err)
+	}
+
+	cmd := exec.Command("chroot", "/host", "/run/nvidia/driver/usr/lib/nvidia/sriov-manage", "-e", nvdevice.Address)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("unable to execute sriov-manage: %v, output: %s", err, string(output))
+	}
+
+	for key, val := range config {
+		remainingToCreate := val
+		VFnum := 0
+		for remainingToCreate > 0 {
+			VFAddr := PCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
+			number, err := m.getVGPUTypeNumberforVFIO(VFAddr + "/creatable_vgpu_types", key)
+			if err != nil {
+				return fmt.Errorf("unable to get vGPU type number: %v", err)
+			}
+			err = os.WriteFile(VFAddr + "/current_vgpu_type", []byte(strconv.Itoa(number)), 0644)
+			if err != nil {
+				return fmt.Errorf("unable to write current vGPU type: %v", err)
+			}
+			VFnum++
+			remainingToCreate--
+		}
+	}
+	return nil
+}
+
+func (m *nvlibVGPUConfigManager) getVGPUTypeNameforVFIO(filePath string, vgpuTypeNumber int) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("unable to open file %s: %v", filePath, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[len(fields)-1]
+		numInt, err := strconv.Atoi(fields[0])
+		if err == nil && numInt == vgpuTypeNumber {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("vGPU type %d not found in file %s", vgpuTypeNumber, filePath)
+}
+
+func (m *nvlibVGPUConfigManager) getVGPUTypeNumberforVFIO(filePath string, vgpuTypeName string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("unable to open file %s: %v", filePath, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[len(fields)-1]
+		numInt, err := strconv.Atoi(fields[0])
+		if err == nil && name == vgpuTypeName {
+			return numInt, nil
+		}
+	}
+	return 0, fmt.Errorf("vGPU type %s not found in file %s", vgpuTypeName, filePath)
+}
+
+func (m *nvlibVGPUConfigManager) IsUbuntu2404() (bool, error) {
+    // Read from the host's /etc/os-release (mounted at /host in the container)
+    data, err := os.ReadFile("/host/etc/os-release")
+    if err != nil {
+        return false, fmt.Errorf("unable to read host OS release info: %v", err)
+    }
+    
+    content := string(data)
+    isUbuntu := strings.Contains(content, "ID=ubuntu")
+    is2404 := strings.Contains(content, `VERSION_ID="24.04"`)
+    
+    return isUbuntu && is2404, nil
 }
 
 // GetVGPUConfig gets the 'VGPUConfig' currently applied to a GPU at a particular index
