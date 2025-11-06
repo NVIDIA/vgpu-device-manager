@@ -29,9 +29,22 @@ import (
 func VGPUConfig(c *Context) error {
 	return assert.WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
 		configManager := vgpu.NewNvlibVGPUConfigManager()
-		current, err := configManager.GetVGPUConfig(i)
+		IsUbuntu2404, err := configManager.IsUbuntu2404()
 		if err != nil {
-			return fmt.Errorf("error getting vGPU config: %v", err)
+			return fmt.Errorf("error checking if Ubuntu 24.04: %v", err)
+		}
+		
+		var current types.VGPUConfig
+		if IsUbuntu2404 {
+			current, err = configManager.GetVGPUConfigforVFIO(i)
+			if err != nil {
+				return fmt.Errorf("error getting VGPU config for VFIO: %v", err)
+			}
+		} else {
+			current, err = configManager.GetVGPUConfig(i)
+			if err != nil {
+				return fmt.Errorf("error getting vGPU config: %v", err)
+			}
 		}
 
 		if current.Equals(vc.VGPUDevices) {
@@ -40,9 +53,16 @@ func VGPUConfig(c *Context) error {
 		}
 
 		log.Debugf("    Updating vGPU config: %v", vc.VGPUDevices)
-		err = configManager.SetVGPUConfig(i, vc.VGPUDevices)
-		if err != nil {
-			return fmt.Errorf("error setting VGPU config: %v", err)
+		if IsUbuntu2404 {
+			err = configManager.SetVGPUConfigforVFIO(i, vc.VGPUDevices)
+			if err != nil {
+				return fmt.Errorf("error setting VGPU config for VFIO: %v", err)
+			}
+		} else {
+			err = configManager.SetVGPUConfig(i, vc.VGPUDevices)
+			if err != nil {
+				return fmt.Errorf("error setting vGPU config: %v", err)
+			}
 		}
 
 		return nil
