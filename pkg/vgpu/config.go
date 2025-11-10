@@ -62,35 +62,35 @@ func (m *nvlibVGPUConfigManager) GetVGPUConfigforVFIO(gpu int) (types.VGPUConfig
 		return nil, fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
 	}
 	vgpuConfig := types.VGPUConfig{}
-	VFnum := 0
+	vfnum := 0
 	if nvdevice.SriovInfo.PhysicalFunction == nil {
 		return vgpuConfig, nil
 	}
 	totalVF := int(nvdevice.SriovInfo.PhysicalFunction.TotalVFs)
-	for VFnum < totalVF {
-		VFAddr := HostPCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
-		if _, err := os.Stat(VFAddr); err != nil {
-			VFnum++
+	for vfnum < totalVF {
+		vfAddr := HostPCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(vfnum) + "/nvidia"
+		if _, err := os.Stat(vfAddr); err != nil {
+			vfnum++
 			continue
 		}
-		VGPUTypeNumberBytes, err := os.ReadFile(VFAddr + "/current_vgpu_type")
+		vgpuTypeNumberBytes, err := os.ReadFile(vfAddr + "/current_vgpu_type")
 		if err != nil {
 			return nil, fmt.Errorf("unable to read current vGPU type: %v", err)
 		}
-		VGPUTypeNumber, err := strconv.Atoi(strings.TrimSpace(string(VGPUTypeNumberBytes)))
+		vgpuTypeNumber, err := strconv.Atoi(strings.TrimSpace(string(vgpuTypeNumberBytes)))
 		if err != nil {
 			return nil, fmt.Errorf("unable to convert current vGPU type to int: %v", err)
 		}
-		if VGPUTypeNumber == 0 {
-			VFnum++
+		if vgpuTypeNumber == 0 {
+			vfnum++
 			continue
 		}
-		VGPUTypeName, err := m.getVGPUTypeNameforVFIO(VFAddr + "/creatable_vgpu_types", VGPUTypeNumber)
+		vgpuTypeName, err := m.getVGPUTypeNameforVFIO(vfAddr + "/creatable_vgpu_types", vgpuTypeNumber)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get vGPU type name: %v", err)
 		}
-		vgpuConfig[VGPUTypeName]++
-		VFnum++
+		vgpuConfig[vgpuTypeName]++
+		vfnum++
 	}
 	return vgpuConfig, nil
 }
@@ -102,13 +102,13 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforVFIO(gpu int, config types.VGPU
 		return fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
 	}
 	
-	GPUDevices, err := m.nvlib.Nvpci.GetGPUs()
+	gpuDevices, err := m.nvlib.Nvpci.GetGPUs()
 	if err != nil {
 		return fmt.Errorf("unable to get all NVIDIA GPU devices: %v", err)
 	}
 	
 	deviceFound := false
-	for _, device := range GPUDevices {
+	for _, device := range gpuDevices {
 		if device.Address == nvdevice.Address {
 			deviceFound = true
 			break
@@ -124,20 +124,20 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforVFIO(gpu int, config types.VGPU
 		return fmt.Errorf("unable to execute sriov-manage: %v, output: %s", err, string(output))
 	}
 
+	vfnum := 0
 	for key, val := range config {
 		remainingToCreate := val
-		VFnum := 0
 		for remainingToCreate > 0 {
-			VFAddr := HostPCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
-			number, err := m.getVGPUTypeNumberforVFIO(VFAddr + "/creatable_vgpu_types", key)
+			vfAddr := HostPCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(vfnum) + "/nvidia"
+			number, err := m.getVGPUTypeNumberforVFIO(vfAddr + "/creatable_vgpu_types", key)
 			if err != nil {
 				return fmt.Errorf("unable to get vGPU type number: %v", err)
 			}
-			err = os.WriteFile(VFAddr + "/current_vgpu_type", []byte(strconv.Itoa(number)), 0644)
+			err = os.WriteFile(vfAddr + "/current_vgpu_type", []byte(strconv.Itoa(number)), 0644)
 			if err != nil {
 				return fmt.Errorf("unable to write current vGPU type: %v", err)
 			}
-			VFnum++
+			vfnum++
 			remainingToCreate--
 		}
 	}
@@ -191,7 +191,7 @@ func (m *nvlibVGPUConfigManager) getVGPUTypeNumberforVFIO(filePath string, vgpuT
 }
 
 func (m *nvlibVGPUConfigManager) IsVFIOEnabled() (bool, error) {
-	VFIOdistributions := map[string]string{
+	vfioDistributions := map[string]string{
 		"ubuntu": "24.04",
 		"rhel": "10",
 	}
@@ -202,7 +202,7 @@ func (m *nvlibVGPUConfigManager) IsVFIOEnabled() (bool, error) {
     }
     
     content := string(data)
-	for distribution, version := range VFIOdistributions {
+	for distribution, version := range vfioDistributions {
 		if strings.Contains(content, distribution) && strings.Contains(content, version) {
 			return true, nil
 		}
