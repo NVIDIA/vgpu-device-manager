@@ -190,24 +190,16 @@ func (m *nvlibVGPUConfigManager) getVGPUTypeNumberforVFIO(filePath string, vgpuT
 	return 0, fmt.Errorf("vGPU type %s not found in file %s", vgpuTypeName, filePath)
 }
 
-func (m *nvlibVGPUConfigManager) IsVFIOEnabled() (bool, error) {
-	vfioDistributions := map[string]string{
-		"ubuntu": "24.04",
-		"rhel": "10",
-	}
-	// Read from the host's /etc/os-release (mounted at /host in the container)
-    data, err := os.ReadFile("/host/etc/os-release")
+func IsVFIOEnabled() (bool, error) {
+    // Check if mdev_bus exists and has entries
+    mdevBusPath := "/sys/class/mdev_bus"
+    
+    entries, err := os.ReadDir(mdevBusPath)
     if err != nil {
-        return false, fmt.Errorf("unable to read host OS release info: %v", err)
+        return false, fmt.Errorf("unable to read mdev_bus directory: %v", err)
     }
     
-    content := string(data)
-	for distribution, version := range vfioDistributions {
-		if strings.Contains(content, distribution) && strings.Contains(content, version) {
-			return true, nil
-		}
-	}
-	return false, nil
+    return len(entries) == 0, nil
 }
 
 // GetVGPUConfig gets the 'VGPUConfig' currently applied to a GPU at a particular index
