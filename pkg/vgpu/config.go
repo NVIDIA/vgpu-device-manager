@@ -28,12 +28,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/NVIDIA/vgpu-device-manager/internal/nvlib"
-	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
 const (
-	PCIDevicesRoot = "/sys/bus/pci/devices"
+	HostPCIDevicesRoot = "/host/sys/bus/pci/devices"
 )
 
 // Manager represents a set of functions for managing vGPU configurations on a node
@@ -41,7 +40,7 @@ type Manager interface {
 	GetVGPUConfig(gpu int) (types.VGPUConfig, error)
 	SetVGPUConfig(gpu int, config types.VGPUConfig) error
 	ClearVGPUConfig(gpu int) error
-	IsUbuntu2404() (bool, error)
+	IsVFIOEnabled() (bool, error)
 	GetVGPUConfigforVFIO(gpu int) (types.VGPUConfig, error)
 	SetVGPUConfigforVFIO(gpu int, config types.VGPUConfig) error
 }
@@ -57,62 +56,42 @@ func NewNvlibVGPUConfigManager() Manager {
 	return &nvlibVGPUConfigManager{nvlib.New()}
 }
 
-func (m *nvlibVGPUConfigManager) GetAllNvidiaGPUDevices() ([]*nvpci.NvidiaPCIDevice, error) {
-	var nvdevices []*nvpci.NvidiaPCIDevice
-	deviceDirs, err := os.ReadDir(PCIDevicesRoot)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read parent PCI bus devices: %v", err)
-	}
-	for _, deviceDir := range deviceDirs {
-		deviceAddress := deviceDir.Name()
-		nvdevice, err := m.nvlib.Nvpci.GetGPUByPciBusID(deviceAddress)
-		if err != nil || nvdevice == nil {
-			continue
-		}
-		if nvdevice.IsGPU() {
-			nvdevices = append(nvdevices, nvdevice)
-		}
-	}
-	return nvdevices, nil
-}
-
 func (m *nvlibVGPUConfigManager) GetVGPUConfigforVFIO(gpu int) (types.VGPUConfig, error) {
 	nvdevice, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
 	}
-	GPUDevices, err := m.nvlib.Nvpci.GetGPUs()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get all NVIDIA GPU devices: %v", err)
-	}
-
 	vgpuConfig := types.VGPUConfig{}
-	for _, device := range GPUDevices {
-		if device.Address == nvdevice.Address {
-			VFnum := 0
-			totalVF := int(nvdevice.SriovInfo.PhysicalFunction.TotalVFs)
-			for VFnum < totalVF {
-				VFAddr := PCIDevicesRoot + "/" + device.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
-				if _, err := os.Stat(VFAddr); err == nil {
-					VGPUTypeNumberBytes, err := os.ReadFile(VFAddr + "/current_vgpu_type")
-					if err != nil {
-						return nil, fmt.Errorf("unable to read current vGPU type: %v", err)
-					}
-					VGPUTypeNumber, err := strconv.Atoi(string(VGPUTypeNumberBytes))
-					if err != nil {
-						return nil, fmt.Errorf("unable to convert current vGPU type to int: %v", err)
-					}
-					VGPUTypeName, err := m.getVGPUTypeNameforVFIO(VFAddr + "/creatable_vgpu_types", VGPUTypeNumber)
-					if err != nil {
-						return nil, fmt.Errorf("unable to get vGPU type name: %v", err)
-					}
-					vgpuConfig[VGPUTypeName]++
-				}
-				VFnum++
-			}
-		}
+	VFnum := 0
+	if nvdevice.SriovInfo.PhysicalFunction == nil {
+		return vgpuConfig, nil
 	}
-	
+	totalVF := int(nvdevice.SriovInfo.PhysicalFunction.TotalVFs)
+	for VFnum < totalVF {
+		VFAddr := HostPCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
+		if _, err := os.Stat(VFAddr); err != nil {
+			VFnum++
+			continue
+		}
+		VGPUTypeNumberBytes, err := os.ReadFile(VFAddr + "/current_vgpu_type")
+		if err != nil {
+			return nil, fmt.Errorf("unable to read current vGPU type: %v", err)
+		}
+		VGPUTypeNumber, err := strconv.Atoi(strings.TrimSpace(string(VGPUTypeNumberBytes)))
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert current vGPU type to int: %v", err)
+		}
+		if VGPUTypeNumber == 0 {
+			VFnum++
+			continue
+		}
+		VGPUTypeName, err := m.getVGPUTypeNameforVFIO(VFAddr + "/creatable_vgpu_types", VGPUTypeNumber)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get vGPU type name: %v", err)
+		}
+		vgpuConfig[VGPUTypeName]++
+		VFnum++
+	}
 	return vgpuConfig, nil
 }
 
@@ -139,11 +118,6 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforVFIO(gpu int, config types.VGPU
 		return fmt.Errorf("GPU at index %d not found in available NVIDIA devices", gpu)
 	}
 
-	err = m.ClearVGPUConfig(gpu)
-	if err != nil {
-		return fmt.Errorf("error clearing VGPUConfig: %v", err)
-	}
-
 	cmd := exec.Command("chroot", "/host", "/run/nvidia/driver/usr/lib/nvidia/sriov-manage", "-e", nvdevice.Address)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -154,7 +128,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforVFIO(gpu int, config types.VGPU
 		remainingToCreate := val
 		VFnum := 0
 		for remainingToCreate > 0 {
-			VFAddr := PCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
+			VFAddr := HostPCIDevicesRoot + "/" + nvdevice.Address + "/virtfn" + strconv.Itoa(VFnum) + "/nvidia"
 			number, err := m.getVGPUTypeNumberforVFIO(VFAddr + "/creatable_vgpu_types", key)
 			if err != nil {
 				return fmt.Errorf("unable to get vGPU type number: %v", err)
@@ -216,18 +190,24 @@ func (m *nvlibVGPUConfigManager) getVGPUTypeNumberforVFIO(filePath string, vgpuT
 	return 0, fmt.Errorf("vGPU type %s not found in file %s", vgpuTypeName, filePath)
 }
 
-func (m *nvlibVGPUConfigManager) IsUbuntu2404() (bool, error) {
-    // Read from the host's /etc/os-release (mounted at /host in the container)
+func (m *nvlibVGPUConfigManager) IsVFIOEnabled() (bool, error) {
+	VFIOdistributions := map[string]string{
+		"ubuntu": "24.04",
+		"rhel": "10",
+	}
+	// Read from the host's /etc/os-release (mounted at /host in the container)
     data, err := os.ReadFile("/host/etc/os-release")
     if err != nil {
         return false, fmt.Errorf("unable to read host OS release info: %v", err)
     }
     
     content := string(data)
-    isUbuntu := strings.Contains(content, "ID=ubuntu")
-    is2404 := strings.Contains(content, `VERSION_ID="24.04"`)
-    
-    return isUbuntu && is2404, nil
+	for distribution, version := range VFIOdistributions {
+		if strings.Contains(content, distribution) && strings.Contains(content, version) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // GetVGPUConfig gets the 'VGPUConfig' currently applied to a GPU at a particular index

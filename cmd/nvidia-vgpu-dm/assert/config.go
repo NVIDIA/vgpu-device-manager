@@ -37,13 +37,13 @@ func VGPUConfig(c *Context) error {
 	matched := make([]bool, len(gpus))
 	err = WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
 		configManager := vgpu.NewNvlibVGPUConfigManager()
-		IsUbuntu2404, err := configManager.IsUbuntu2404()
+		IsVFIOEnabled, err := configManager.IsVFIOEnabled()
 		if err != nil {
-			return fmt.Errorf("error checking if Ubuntu 24.04: %v", err)
+			return fmt.Errorf("error checking if VFIO is enabled: %v", err)
 		}
 		
 		var current types.VGPUConfig
-		if IsUbuntu2404 {
+		if IsVFIOEnabled {
 			current, err = configManager.GetVGPUConfigforVFIO(i)
 			if err != nil {
 				return fmt.Errorf("error getting VGPU config for VFIO: %v", err)
