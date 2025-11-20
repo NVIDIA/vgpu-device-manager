@@ -29,22 +29,9 @@ import (
 func VGPUConfig(c *Context) error {
 	return assert.WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
 		configManager := vgpu.NewNvlibVGPUConfigManager()
-		IsVFIOEnabled, err := configManager.IsVFIOEnabled()
+		current, err := configManager.GetVGPUConfig(i)
 		if err != nil {
-			return fmt.Errorf("error checking if Ubuntu 24.04: %v", err)
-		}
-		
-		var current types.VGPUConfig
-		if IsVFIOEnabled {
-			current, err = configManager.GetVGPUConfigforVFIO(i)
-			if err != nil {
-				return fmt.Errorf("error getting VGPU config for VFIO: %v", err)
-			}
-		} else {
-			current, err = configManager.GetVGPUConfig(i)
-			if err != nil {
-				return fmt.Errorf("error getting vGPU config: %v", err)
-			}
+			return fmt.Errorf("error getting vGPU config: %v", err)
 		}
 
 		if current.Equals(vc.VGPUDevices) {
@@ -53,16 +40,9 @@ func VGPUConfig(c *Context) error {
 		}
 
 		log.Debugf("    Updating vGPU config: %v", vc.VGPUDevices)
-		if IsVFIOEnabled {
-			err = configManager.SetVGPUConfigforVFIO(i, vc.VGPUDevices)
-			if err != nil {
-				return fmt.Errorf("error setting VGPU config for VFIO: %v", err)
-			}
-		} else {
-			err = configManager.SetVGPUConfig(i, vc.VGPUDevices)
-			if err != nil {
-				return fmt.Errorf("error setting vGPU config: %v", err)
-			}
+		err = configManager.SetVGPUConfig(i, vc.VGPUDevices)
+		if err != nil {
+			return fmt.Errorf("error setting VGPU config: %v", err)
 		}
 
 		return nil
