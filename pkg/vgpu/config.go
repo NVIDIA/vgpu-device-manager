@@ -18,23 +18,51 @@ package vgpu
 
 import (
 	"fmt"
-	"strings"
-	"os"
 	"strconv"
-	"bufio"
-	"path/filepath"
-	"time"
+	"strings"
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/google/uuid"
 
 	"github.com/NVIDIA/vgpu-device-manager/internal/nvlib"
+	"github.com/NVIDIA/vgpu-device-manager/internal/vfio"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
 
 const (
 	HostPCIDevicesRoot = "/host/sys/bus/pci/devices"
 )
+
+// ParentDeviceInterface represents a common interface for both VFIO and MDEV parent devices
+type ParentDeviceInterface interface {
+	GetPhysicalFunction() *nvpci.NvidiaPCIDevice
+	IsVGPUTypeAvailable(string) (bool, error)
+	CreateVGPUDevice(string, string) error
+	GetAvailableVGPUInstances(string) (int, error)
+}
+
+// DeviceInterface represents a common interface for both VFIO and MDEV vGPU device instances
+type DeviceInterface interface {
+	GetPhysicalFunction() *nvpci.NvidiaPCIDevice
+	Delete() error
+}
+
+type mdevParentAdapter struct {
+	*nvmdev.ParentDevice
+}
+
+func (a *mdevParentAdapter) IsVGPUTypeAvailable(mdevType string) (bool, error) {
+	return a.ParentDevice.IsMDEVTypeAvailable(mdevType)
+}
+
+func (a *mdevParentAdapter) CreateVGPUDevice(mdevType string, id string) error {
+	return a.ParentDevice.CreateMDEVDevice(mdevType, id)
+}
+
+func (a *mdevParentAdapter) GetAvailableVGPUInstances(mdevType string) (int, error) {
+	return a.ParentDevice.GetAvailableMDEVInstances(mdevType)
+}
 
 // Manager represents a set of functions for managing vGPU configurations on a node
 type Manager interface {
@@ -44,186 +72,36 @@ type Manager interface {
 }
 
 type nvlibVGPUConfigManager struct {
-	nvlib nvlib.Interface
+	nvlib      nvlib.Interface
+	vfio       *vfio.VFIOManager
+	isVFIOMode bool
 }
 
 var _ Manager = (*nvlibVGPUConfigManager)(nil)
 
 // NewNvlibVGPUConfigManager returns a new vGPU Config Manager which uses go-nvlib when creating / deleting vGPU devices
-func NewNvlibVGPUConfigManager() Manager {
-	return &nvlibVGPUConfigManager{nvlib.New()}
-}
+func NewNvlibVGPUConfigManager() (Manager, error) {
+	nvlibInstance := nvlib.New()
+	vfioManager := vfio.NewVFIOManager(nvlibInstance)
 
-func (m *nvlibVGPUConfigManager) GetVGPUConfig(gpu int) (types.VGPUConfig, error) {
-	IsVFIOEnabled, err := m.IsVFIOEnabled(gpu)
+	// Determine mode once at initialization
+	isVFIOMode, err := vfioManager.IsVFIOEnabled(0)
 	if err != nil {
 		return nil, fmt.Errorf("error checking if VFIO is enabled: %v", err)
 	}
-	if IsVFIOEnabled {
-		return m.GetVGPUConfigforVFIO(gpu)
-	}
-	return m.GetVGPUConfigforMDEV(gpu)
-}
 
-func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
-	IsVFIOEnabled, err := m.IsVFIOEnabled(gpu)
-	if err != nil {
-		return fmt.Errorf("error checking if VFIO is enabled: %v", err)
-	}
-	if IsVFIOEnabled {
-		return m.SetVGPUConfigforVFIO(gpu, config)
-	}
-	return m.SetVGPUConfigforMDEV(gpu, config)
-}
-
-
-func (m *nvlibVGPUConfigManager) GetVGPUConfigforVFIO(gpu int) (types.VGPUConfig, error) {
-	nvdevice, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
-	}
-	vgpuConfig := types.VGPUConfig{}
-	vfnum := 0
-	if nvdevice.SriovInfo.IsVF() {
-		return vgpuConfig, nil
-	}
-	numVF := int(nvdevice.SriovInfo.PhysicalFunction.NumVFs)
-	for vfnum < numVF {
-		vfAddr := filepath.Join(HostPCIDevicesRoot, nvdevice.Address, "virtfn"+strconv.Itoa(vfnum), "nvidia")
-		if _, err := os.Stat(vfAddr); err != nil {
-			return nil, fmt.Errorf("Virtual Function %d at address %s does not exist", vfnum, vfAddr)
-		}
-		vgpuTypeNumberBytes, err := os.ReadFile(filepath.Join(vfAddr, "current_vgpu_type"))
-		if err != nil {
-			return nil, fmt.Errorf("unable to read current vGPU type: %v", err)
-		}
-		vgpuTypeNumber, err := strconv.Atoi(strings.TrimSpace(string(vgpuTypeNumberBytes)))
-		if err != nil {
-			return nil, fmt.Errorf("unable to convert current vGPU type number to int: %v", err)
-		}
-		if vgpuTypeNumber == 0 {
-			vfnum++
-			continue
-		}
-		vgpuTypeName, err := m.getVGPUTypeNameForId(filepath.Join(vfAddr, "creatable_vgpu_types"), vgpuTypeNumber)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get vGPU type name: %v", err)
-		}
-		vgpuConfig[vgpuTypeName]++
-		vfnum++
-	}
-	return vgpuConfig, nil
-}
-
-//// Set the vGPU config for each GPU if it is in nvdevices 
-func (m *nvlibVGPUConfigManager) SetVGPUConfigforVFIO(gpu int, config types.VGPUConfig) error {
-	nvdevice, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
-	if err != nil {
-		return fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
-	}
-	
-	gpuDevices, err := m.nvlib.Nvpci.GetGPUs()
-	if err != nil {
-		return fmt.Errorf("unable to get all NVIDIA GPU devices: %v", err)
-	}
-	
-	deviceFound := false
-	for _, device := range gpuDevices {
-		if device.Address == nvdevice.Address {
-			deviceFound = true
-			break
-		}
-	}
-	if !deviceFound {
-		return fmt.Errorf("GPU at index %d not found in available NVIDIA devices", gpu)
-	}
-
-	vfnum := 0
-	for key, val := range config {
-		remainingToCreate := val
-		for remainingToCreate > 0 {
-			vfAddr := filepath.Join(HostPCIDevicesRoot, nvdevice.Address, "virtfn"+strconv.Itoa(vfnum), "nvidia")
-			number, err := m.getIdForVGPUTypeName(filepath.Join(vfAddr, "creatable_vgpu_types"), key)
-			if err != nil {
-				return fmt.Errorf("unable to get vGPU type number: %v", err)
-			}
-			err = os.WriteFile(filepath.Join(vfAddr, "current_vgpu_type"), []byte(strconv.Itoa(number)), 0644)
-			if err != nil {
-				return fmt.Errorf("unable to write current vGPU type: %v", err)
-			}
-			vfnum++
-			remainingToCreate--
-		}
-	}
-	return nil
-}
-
-func (m *nvlibVGPUConfigManager) getVGPUTypeNameForId(filePath string, vgpuTypeNumber int) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("unable to open file %s: %v", filePath, err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		name := fields[len(fields)-1]
-		numInt, err := strconv.Atoi(fields[0])
-		if err == nil && numInt == vgpuTypeNumber {
-			return name, nil
-		}
-	}
-	return "", fmt.Errorf("vGPU type %d not found in file %s", vgpuTypeNumber, filePath)
-}
-
-func (m *nvlibVGPUConfigManager) getIdForVGPUTypeName(filePath string, vgpuTypeName string) (int, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("unable to open file %s: %v", filePath, err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		name := fields[len(fields)-1]
-		numInt, err := strconv.Atoi(fields[0])
-		if err == nil && name == vgpuTypeName {
-			return numInt, nil
-		}
-	}
-	return 0, fmt.Errorf("vGPU type %s not found in file %s", vgpuTypeName, filePath)
-}
-
-func (m *nvlibVGPUConfigManager) IsVFIOEnabled(gpu int) (bool, error) {
-	time.Sleep(10 * time.Second) // Wait for 10 seconds to ensure the virtual functions are ready
-    nvdevice, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
-    if err != nil {
-        return false, fmt.Errorf("unable to get GPU by index %d: %v", gpu, err)
-    }
-    // Check if vfio exists and has entries
-    vfioPath := filepath.Join(HostPCIDevicesRoot, nvdevice.Address, "virtfn0", "nvidia")
-    creatableTypesFile := filepath.Join(vfioPath, "creatable_vgpu_types")
-
-	_, statErr := os.Stat(creatableTypesFile)
-	if statErr == nil {
-		return true, nil
-	}
-
-	return false, fmt.Errorf("unable to stat creatable_vgpu_types file at %s: %v", creatableTypesFile, statErr)
+	return &nvlibVGPUConfigManager{
+		nvlib:      nvlibInstance,
+		vfio:       vfioManager,
+		isVFIOMode: isVFIOMode,
+	}, nil
 }
 
 // GetVGPUConfig gets the 'VGPUConfig' currently applied to a GPU at a particular index
-func (m *nvlibVGPUConfigManager) GetVGPUConfigforMDEV(gpu int) (types.VGPUConfig, error) {
+func (m *nvlibVGPUConfigManager) GetVGPUConfig(gpu int) (types.VGPUConfig, error) {
+	if m.isVFIOMode {
+		return types.VGPUConfig{}, nil
+	}
 	device, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
 	if err != nil {
 		return nil, fmt.Errorf("error getting device at index '%d': %v", gpu, err)
@@ -246,19 +124,19 @@ func (m *nvlibVGPUConfigManager) GetVGPUConfigforMDEV(gpu int) (types.VGPUConfig
 }
 
 // SetVGPUConfig applies the selected `VGPUConfig` to a GPU at a particular index if it is not already applied
-func (m *nvlibVGPUConfigManager) SetVGPUConfigforMDEV(gpu int, config types.VGPUConfig) error {
+func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
 	device, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
 	if err != nil {
 		return fmt.Errorf("error getting device at index '%d': %v", gpu, err)
 	}
 
-	allParents, err := m.nvlib.Nvmdev.GetAllParentDevices()
+	allParents, err := m.GetAllParentDevices()
 	if err != nil {
 		return fmt.Errorf("error getting all parent devices: %v", err)
 	}
 
 	// Filter for 'parent' devices that are backed by the physical function
-	parents := []*nvmdev.ParentDevice{}
+	parents := []ParentDeviceInterface{}
 	for _, p := range allParents {
 		pf := p.GetPhysicalFunction()
 		if pf.Address == device.Address {
@@ -283,10 +161,9 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforMDEV(gpu int, config types.VGPU
 	sanitizedConfig := types.VGPUConfig{}
 	for key, val := range config {
 		strippedKey := stripVGPUConfigSuffix(key)
-		//nolint:gocritic // using if-else for clarity instead of switch
-		if parents[0].IsMDEVTypeSupported(key) {
+		if keyAvailable, err := parents[0].IsVGPUTypeAvailable(key); err == nil && keyAvailable {
 			sanitizedConfig[key] = val
-		} else if parents[0].IsMDEVTypeSupported(strippedKey) {
+		} else if strippedKeyAvailable, err := parents[0].IsVGPUTypeAvailable(strippedKey); err == nil && strippedKeyAvailable {
 			sanitizedConfig[strippedKey] = val
 		} else {
 			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
@@ -305,12 +182,14 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforMDEV(gpu int, config types.VGPU
 				break
 			}
 
-			supported := parent.IsMDEVTypeSupported(key)
+			supported, err := parent.IsVGPUTypeAvailable(key)
+			if err != nil {
+				return fmt.Errorf("error checking if vGPU type %s is available: %v", key, err)
+			}
 			if !supported {
 				return fmt.Errorf("vGPU type %s is not supported on GPU %s", key, device.Address)
 			}
-
-			available, err := parent.GetAvailableMDEVInstances(key)
+			available, err := parent.GetAvailableVGPUInstances(key)
 			if err != nil {
 				return fmt.Errorf("error getting available vGPU instances: %v", err)
 			}
@@ -321,9 +200,16 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfigforMDEV(gpu int, config types.VGPU
 
 			numToCreate := min(remainingToCreate, available)
 			for i := 0; i < numToCreate; i++ {
-				err = parent.CreateMDEVDevice(key, uuid.New().String())
-				if err != nil {
-					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %w", key, parent.Address, err)
+				if m.isVFIOMode {
+					err = parent.CreateVGPUDevice(key, strconv.Itoa(i))
+					if err != nil {
+						return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.GetPhysicalFunction().Address, err)
+					}
+				} else {
+					err = parent.CreateVGPUDevice(key, uuid.New().String())
+					if err != nil {
+						return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.GetPhysicalFunction().Address, err)
+					}
 				}
 			}
 			remainingToCreate -= numToCreate
@@ -343,7 +229,7 @@ func (m *nvlibVGPUConfigManager) ClearVGPUConfig(gpu int) error {
 		return fmt.Errorf("error getting device at index '%d': %v", gpu, err)
 	}
 
-	vgpuDevs, err := m.nvlib.Nvmdev.GetAllDevices()
+	vgpuDevs, err := m.GetAllDevices()
 	if err != nil {
 		return fmt.Errorf("error getting all vGPU devices: %v", err)
 	}
@@ -353,7 +239,7 @@ func (m *nvlibVGPUConfigManager) ClearVGPUConfig(gpu int) error {
 		if device.Address == pf.Address {
 			err = vgpuDev.Delete()
 			if err != nil {
-				return fmt.Errorf("error deleting %s vGPU device with id %s: %v", vgpuDev.MDEVType, vgpuDev.UUID, err)
+				return fmt.Errorf("error deleting vGPU device: %v", err)
 			}
 		}
 	}
@@ -383,4 +269,57 @@ func stripVGPUConfigSuffix(configType string) string {
 		}
 	}
 	return configType
+}
+
+// IsVFIOMode returns true if the manager is running in VFIO mode, false for MDEV mode
+func (m *nvlibVGPUConfigManager) IsVFIOMode() bool {
+	return m.isVFIOMode
+}
+
+// GetAllParentDevices returns all parent devices as a common interface type
+func (m *nvlibVGPUConfigManager) GetAllParentDevices() ([]ParentDeviceInterface, error) {
+	if m.isVFIOMode {
+		vfioDevices, err := m.vfio.GetAllParentDevices()
+		if err != nil {
+			return nil, err
+		}
+		result := make([]ParentDeviceInterface, len(vfioDevices))
+		for i, d := range vfioDevices {
+			result[i] = d
+		}
+		return result, nil
+	}
+	mdevDevices, err := m.nvlib.Nvmdev.GetAllParentDevices()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ParentDeviceInterface, len(mdevDevices))
+	for i, d := range mdevDevices {
+		result[i] = &mdevParentAdapter{ParentDevice: d}
+	}
+	return result, nil
+}
+
+// GetAllDevices returns all vGPU device instances as a common interface type
+func (m *nvlibVGPUConfigManager) GetAllDevices() ([]DeviceInterface, error) {
+	if m.isVFIOMode {
+		vfioDevices, err := m.vfio.GetAllDevices()
+		if err != nil {
+			return nil, err
+		}
+		result := make([]DeviceInterface, len(vfioDevices))
+		for i, d := range vfioDevices {
+			result[i] = d
+		}
+		return result, nil
+	}
+	mdevDevices, err := m.nvlib.Nvmdev.GetAllDevices()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DeviceInterface, len(mdevDevices))
+	for i, d := range mdevDevices {
+		result[i] = d
+	}
+	return result, nil
 }
