@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
@@ -57,6 +60,9 @@ const (
 	defaultHostRootMount             = "/host"
 	defaultHostMigManagerStateFile   = "/etc/systemd/system/nvidia-mig-manager.service.d/override.conf"
 	defaultHostKubeletSystemdService = "kubelet.service"
+
+	nvidiaVendorID = "0x10de"
+	pciDevicesPath = "/sys/bus/pci/devices"
 )
 
 var (
@@ -94,6 +100,13 @@ type SyncableVGPUConfig struct {
 	lastRead string
 }
 
+// vfStatus holds SR-IOV VF status for a single GPU PF.
+type vfStatus struct {
+	pciAddr  string
+	numVFs   int
+	totalVFs int
+}
+
 // NewSyncableVGPUConfig creates a new SyncableVGPUConfig
 func NewSyncableVGPUConfig() *SyncableVGPUConfig {
 	var m SyncableVGPUConfig
@@ -122,6 +135,113 @@ func (m *SyncableVGPUConfig) Get() string {
 	}
 	m.lastRead = m.current
 	return m.lastRead
+}
+
+// waitForVFs waits for SR-IOV Virtual Functions to be created on all NVIDIA GPUs.
+// It polls sriov_numvfs until all GPUs have their full VF count enabled.
+func waitForVFs(timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	return wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(context.Context) (bool, error) {
+		statuses, err := getNvidiaVFStatus()
+		if err != nil {
+			log.Debugf("Error checking for VFs: %v", err)
+			return false, nil
+		}
+
+		if len(statuses) == 0 {
+			log.Info("No NVIDIA GPUs with SR-IOV capability found, skipping VF wait")
+			return true, nil
+		}
+
+		totalEnabled := 0
+		totalExpected := 0
+		for _, s := range statuses {
+			totalEnabled += s.numVFs
+			totalExpected += s.totalVFs
+		}
+
+		if totalEnabled == totalExpected {
+			log.Infof("All %d VF(s) enabled on %d NVIDIA GPU(s)", totalEnabled, len(statuses))
+			return true, nil
+		}
+
+		log.Infof("Waiting for VFs: %d/%d enabled across %d GPU(s)", totalEnabled, totalExpected, len(statuses))
+		for _, s := range statuses {
+			if s.numVFs < s.totalVFs {
+				log.Debugf("  %s: %d/%d VFs", s.pciAddr, s.numVFs, s.totalVFs)
+			}
+		}
+		return false, nil
+	})
+}
+
+// getNvidiaVFStatus returns SR-IOV status for all NVIDIA GPUs.
+func getNvidiaVFStatus() ([]vfStatus, error) {
+	gpuDevicePaths, err := findNvidiaSRIOVPFs()
+	if err != nil {
+		return nil, err
+	}
+
+	var statuses []vfStatus
+	for _, devicePath := range gpuDevicePaths {
+		numvfs, err := readSysfsInt(filepath.Join(devicePath, "sriov_numvfs"))
+		if err != nil {
+			numvfs = 0
+		}
+		totalvfs, err := readSysfsInt(filepath.Join(devicePath, "sriov_totalvfs"))
+		if err != nil {
+			continue
+		}
+		statuses = append(statuses, vfStatus{
+			pciAddr:  filepath.Base(devicePath),
+			numVFs:   numvfs,
+			totalVFs: totalvfs,
+		})
+	}
+	return statuses, nil
+}
+
+// findNvidiaSRIOVPFs finds all NVIDIA PCI devices that support SR-IOV.
+func findNvidiaSRIOVPFs() ([]string, error) {
+	entries, err := os.ReadDir(pciDevicesPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var gpuDevicePaths []string
+	for _, entry := range entries {
+		devicePath := filepath.Join(pciDevicesPath, entry.Name())
+		vendor, err := readSysfsString(filepath.Join(devicePath, "vendor"))
+		if err != nil || vendor != nvidiaVendorID {
+			continue
+		}
+		// Check if device supports SR-IOV
+		if _, err := os.Stat(filepath.Join(devicePath, "sriov_totalvfs")); err != nil {
+			continue
+		}
+		gpuDevicePaths = append(gpuDevicePaths, devicePath)
+	}
+	return gpuDevicePaths, nil
+}
+
+// readSysfsString reads a sysfs file and returns its trimmed content.
+func readSysfsString(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// readSysfsInt reads a sysfs file and parses it as an integer.
+func readSysfsInt(path string) (int, error) {
+	s, err := readSysfsString(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(s)
 }
 
 func main() {
@@ -264,6 +384,11 @@ func start(c *cli.Context) error {
 	clientset, err := kubernetes.NewForConfig(clientConfig)
 	if err != nil {
 		return fmt.Errorf("error building kubernetes clientset from config: %s", err)
+	}
+
+	log.Info("Waiting for SR-IOV VFs to be available...")
+	if err := waitForVFs(3 * time.Minute); err != nil {
+		return fmt.Errorf("failed waiting for VFs: %v", err)
 	}
 
 	vGPUConfig := NewSyncableVGPUConfig()
