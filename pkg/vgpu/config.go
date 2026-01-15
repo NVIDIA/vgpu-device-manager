@@ -25,6 +25,7 @@ import (
 	vgpu_combined "github.com/NVIDIA/vgpu-device-manager/internal/vgpu-combined"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 	"github.com/google/uuid"
+	"slices"
 )
 
 const (
@@ -101,22 +102,26 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 		return fmt.Errorf("error getting device at index '%d': %v", gpu, err)
 	}
 
-	allParents, err := m.combined.GetAllParentDevices()
-	if err != nil {
-		return fmt.Errorf("error getting all parent devices: %v", err)
+	nvmlDevice, ret := nvml.DeviceGetHandleByPciBusId(device.Address)
+	if ret != nvml.SUCCESS {
+		return fmt.Errorf("failed to get device handle: %v", nvml.ErrorString(ret))
 	}
 
-	// Filter for 'parent' devices that are backed by the physical function
-	parents := []vgpu_combined.ParentDeviceInterface{}
-	for _, p := range allParents {
-		pf := p.GetPhysicalFunction()
-		if pf.Address == device.Address {
-			parents = append(parents, p)
+	supportedVGPUs, ret := nvmlDevice.GetSupportedVgpus()
+	if ret != nvml.SUCCESS {
+		return fmt.Errorf("failed to get supported vGPUs: %v", nvml.ErrorString(ret))
+	}
+
+	for key := range config {
+		found := false
+		for _, vgpuTypeId := range supportedVGPUs {
+			if vgpuTypeId.GetName() == key {
+				found = true
+			}
 		}
-	}
-
-	if len(parents) == 0 {
-		return fmt.Errorf("no parent devices found for GPU at index '%d'", gpu)
+		if !found {
+			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
+		}
 	}
 
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
@@ -147,47 +152,24 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	}
 
 	for key, val := range sanitizedConfig {
-		remainingToCreate := val
-		for _, parent := range parents {
-			if remainingToCreate == 0 {
+
+		creatableVGPUs, ret := nvmlDevice.GetCreatableVgpus()
+		if ret != nvml.SUCCESS {
+			return fmt.Errorf("failed to get creatable vGPUs: %v", nvml.ErrorString(ret))
+		}
+		found := false
+		for _, vgpuTypeId := range creatableVGPUs {
+			if vgpuTypeId.GetName() == key {
+				found = true
 				break
 			}
-
-			supported, err := parent.IsVGPUTypeAvailable(key)
-			if err != nil {
-				return fmt.Errorf("error checking if vGPU type %s is available: %v", key, err)
-			}
-			if !supported {
-				return fmt.Errorf("vGPU type %s is not supported on GPU %s", key, device.Address)
-			}
-			available, err := parent.GetAvailableVGPUInstances(key)
-			if err != nil {
-				return fmt.Errorf("error getting available vGPU instances: %v", err)
-			}
-
-			if available <= 0 {
-				continue
-			}
-
-			numToCreate := min(remainingToCreate, available)
-			for i := 0; i < numToCreate; i++ {
-				if m.combined.IsVFIOMode() {
-					err = parent.CreateVGPUDevice(key, strconv.Itoa(i))
-					if err != nil {
-						return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.GetPhysicalFunction().Address, err)
-					}
-				} else {
-					err = parent.CreateVGPUDevice(key, uuid.New().String())
-					if err != nil {
-						return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.GetPhysicalFunction().Address, err)
-					}
-				}
-			}
-			remainingToCreate -= numToCreate
 		}
-
-		if remainingToCreate > 0 {
-			return fmt.Errorf("failed to create %[1]d %[2]s vGPU devices on the GPU. ensure '%[1]d' does not exceed the maximum supported instances for '%[2]s'", val, key)
+		if !found {
+			return fmt.Errorf("vGPU type %s is not creatable on GPU (index=%d, address=%s)", key, gpu, device.Address)
+		}
+		err = m.combined.CreateVGPUDevices(device, key, val)
+		if err != nil {
+			return fmt.Errorf("error creating vGPU devices: %v", err)
 		}
 	}
 	return nil
