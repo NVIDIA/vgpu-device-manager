@@ -2,11 +2,13 @@ package vgpu_combined
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/NVIDIA/vgpu-device-manager/internal/nvlib"
 	"github.com/NVIDIA/vgpu-device-manager/internal/vfio"
+	"github.com/google/uuid"
 )
 
 type VGPUCombinedManager struct {
@@ -147,11 +149,11 @@ func (m *VGPUCombinedManager) GetAllDevices() ([]DeviceInterface, error) {
 }
 
 func (m *VGPUCombinedManager) CreateVGPUDevices(device *nvpci.NvidiaPCIDevice, vgpuType string, count int) error {
-	remainingToCreate := count
 	parents, err := m.GetAllParentDevicesbyAddress(device.Address)
 	if err != nil {
 		return fmt.Errorf("error getting all parent devices by address: %v", err)
 	}
+	remainingToCreate := count
 	for _, parent := range parents {
 		if remainingToCreate == 0 {
 			break
@@ -166,10 +168,10 @@ func (m *VGPUCombinedManager) CreateVGPUDevices(device *nvpci.NvidiaPCIDevice, v
 
 		numToCreate := min(remainingToCreate, available)
 		for i := 0; i < numToCreate; i++ {
-			if m.combined.IsVFIOMode() {
+			if m.IsVFIOMode() {
 				err = parent.CreateVGPUDevice(vgpuType, strconv.Itoa(i))
 				if err != nil {
-					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.GetPhysicalFunction().Address, err)
+					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", vgpuType, parent.GetPhysicalFunction().Address, err)
 				}
 			} else {
 				err = parent.CreateVGPUDevice(vgpuType, uuid.New().String())
@@ -185,4 +187,3 @@ func (m *VGPUCombinedManager) CreateVGPUDevices(device *nvpci.NvidiaPCIDevice, v
 	}
 	return nil
 }
-

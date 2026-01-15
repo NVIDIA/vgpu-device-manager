@@ -18,14 +18,11 @@ package vgpu
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	vgpu_combined "github.com/NVIDIA/vgpu-device-manager/internal/vgpu-combined"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
-	"github.com/google/uuid"
-	"slices"
 )
 
 const (
@@ -111,19 +108,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	if ret != nvml.SUCCESS {
 		return fmt.Errorf("failed to get supported vGPUs: %v", nvml.ErrorString(ret))
 	}
-
-	for key := range config {
-		found := false
-		for _, vgpuTypeId := range supportedVGPUs {
-			if vgpuTypeId.GetName() == key {
-				found = true
-			}
-		}
-		if !found {
-			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
-		}
-	}
-
+    
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
 	// the config are supported for the GPU we are applying the configuration to.
 	//
@@ -137,11 +122,21 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	sanitizedConfig := types.VGPUConfig{}
 	for key, val := range config {
 		strippedKey := stripVGPUConfigSuffix(key)
-		if keyAvailable, err := parents[0].IsVGPUTypeAvailable(key); err == nil && keyAvailable {
-			sanitizedConfig[key] = val
-		} else if strippedKeyAvailable, err := parents[0].IsVGPUTypeAvailable(strippedKey); err == nil && strippedKeyAvailable {
-			sanitizedConfig[strippedKey] = val
-		} else {
+		found := false
+		for _, vgpuTypeId := range supportedVGPUs {
+			name, ret := vgpuTypeId.GetName()
+			if ret == nvml.SUCCESS && name == key {
+				found = true
+				sanitizedConfig[key] = val
+				break
+			}
+			if ret == nvml.SUCCESS && name == strippedKey {
+				found = true
+				sanitizedConfig[strippedKey] = val
+				break
+			}
+		}
+		if !found {
 			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
 		}
 	}
@@ -152,14 +147,14 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	}
 
 	for key, val := range sanitizedConfig {
-
 		creatableVGPUs, ret := nvmlDevice.GetCreatableVgpus()
 		if ret != nvml.SUCCESS {
 			return fmt.Errorf("failed to get creatable vGPUs: %v", nvml.ErrorString(ret))
 		}
 		found := false
 		for _, vgpuTypeId := range creatableVGPUs {
-			if vgpuTypeId.GetName() == key {
+			name, ret := vgpuTypeId.GetName()
+			if ret == nvml.SUCCESS && name == key {
 				found = true
 				break
 			}

@@ -28,7 +28,7 @@ func NewVFIOManager(nvlibInstance nvlib.Interface) *VFIOManager {
 // ParentDevice represents an NVIDIA parent PCI device.
 type ParentDevice struct {
 	*nvpci.NvidiaPCIDevice
-	VirtualFunctionPaths map[string]string
+	VirtualFunctionPath string
 }
 
 // Device represents an NVIDIA (vGPU) device.
@@ -46,19 +46,17 @@ func (m *VFIOManager) GetAllParentDevices() ([]*ParentDevice, error) {
 	for _, device := range nvdevices {
 		vfnum := 0
 		numVF := int(device.SriovInfo.PhysicalFunction.NumVFs)
-		virtualFunctionPaths := make(map[string]string)
 		for vfnum < numVF {
 			vfAddr := filepath.Join(HostPCIDevicesRoot, device.Address, "virtfn"+strconv.Itoa(vfnum), "nvidia")
 			if _, err := os.Stat(vfAddr); err != nil {
 				return nil, fmt.Errorf("virtual function %d at address %s does not exist", vfnum, vfAddr)
 			}
-			virtualFunctionPaths[strconv.Itoa(vfnum)] = vfAddr
+			parentDevices = append(parentDevices, &ParentDevice{
+				NvidiaPCIDevice: device,
+				VirtualFunctionPath: vfAddr,
+			})
 			vfnum++
 		}
-		parentDevices = append(parentDevices, &ParentDevice{
-			NvidiaPCIDevice:      device,
-			VirtualFunctionPaths: virtualFunctionPaths,
-		})
 	}
 	return parentDevices, nil
 }
@@ -70,8 +68,7 @@ func (m *VFIOManager) GetAllDevices() ([]*Device, error) {
 	}
 	devices := []*Device{}
 	for _, parentDevice := range parentDevices {
-		for _, vfAddr := range parentDevice.VirtualFunctionPaths {
-			vgpuTypeNumberBytes, err := os.ReadFile(filepath.Join(vfAddr, "current_vgpu_type"))
+			vgpuTypeNumberBytes, err := os.ReadFile(filepath.Join(parentDevice.VirtualFunctionPath, "current_vgpu_type"))
 			if err != nil {
 				return nil, fmt.Errorf("unable to read current vGPU type: %v", err)
 			}
@@ -81,19 +78,18 @@ func (m *VFIOManager) GetAllDevices() ([]*Device, error) {
 			}
 			if vgpuTypeNumber != 0 {
 				devices = append(devices, &Device{
-					Path:   vfAddr,
+					Path:   parentDevice.VirtualFunctionPath,
 					Parent: parentDevice,
 				})
 			}
-		}
 	}
 	return devices, nil
 }
 
 // GetPhysicalFunction gets the physical PCI device backing a 'parent' device.
 func (p *ParentDevice) GetPhysicalFunction() *nvpci.NvidiaPCIDevice {
-	if p.SriovInfo.IsVF() {
-		return p.SriovInfo.VirtualFunction.PhysicalFunction
+	if p.NvidiaPCIDevice.SriovInfo.IsVF() {
+		return p.NvidiaPCIDevice.SriovInfo.VirtualFunction.PhysicalFunction
 	}
 	// Either it is an SRIOV physical function or a non-SRIOV device, so return the device itself
 	return p.NvidiaPCIDevice
@@ -149,24 +145,22 @@ func (m *VFIOManager) IsVFIOEnabled(gpu int) (bool, error) {
 
 // IsVGPUTypeSupported checks if the vfioType is supported by this parent GPU
 func (p *ParentDevice) IsVGPUTypeAvailable(vfioType string) (bool, error) {
-	for _, vfPath := range p.VirtualFunctionPaths {
-		creatableTypesPath := filepath.Join(vfPath, "creatable_vgpu_types")
-		file, err := os.Open(creatableTypesPath)
-		if err != nil {
-			return false, fmt.Errorf("unable to open file %s: %v", creatableTypesPath, err)
+	creatableTypesPath := filepath.Join(p.VirtualFunctionPath, "creatable_vgpu_types")
+	file, err := os.Open(creatableTypesPath)
+	if err != nil {
+		return false, fmt.Errorf("unable to open file %s: %v", creatableTypesPath, err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
 		}
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := scanner.Text()
-			fields := strings.Fields(line)
-			if len(fields) < 2 {
-				continue
-			}
-			name := fields[len(fields)-1]
-			if name == vfioType {
-				return true, nil
-			}
+		name := fields[len(fields)-1]
+		if name == vfioType {
+			return true, nil
 		}
 	}
 	return false, nil
@@ -183,7 +177,7 @@ func (m *Device) Delete() error {
 }
 
 func (p *ParentDevice) CreateVGPUDevice(vfioType string, vfnum string) error {
-	vfPath := p.VirtualFunctionPaths[vfnum]
+	vfPath := p.VirtualFunctionPath
 	currentVGPUTypePath := filepath.Join(vfPath, "current_vgpu_type")
 	number, err := p.GetIdForVGPUTypeName(filepath.Join(vfPath, "creatable_vgpu_types"), vfioType)
 	if err != nil {
@@ -202,7 +196,7 @@ func (p *ParentDevice) GetAvailableVGPUInstances(vfioType string) (int, error) {
 		return 0, fmt.Errorf("unable to check if vGPU type is available: %v", err)
 	}
 	if available {
-		return int(p.NvidiaPCIDevice.SriovInfo.PhysicalFunction.NumVFs), nil
+		return 1, nil
 	}
 	return 0, nil
 }
