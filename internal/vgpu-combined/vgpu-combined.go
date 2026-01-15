@@ -101,6 +101,27 @@ func (m *VGPUCombinedManager) GetAllParentDevices() ([]ParentDeviceInterface, er
 	return result, nil
 }
 
+func (m *VGPUCombinedManager) GetAllParentDevicesbyAddress(address string) ([]ParentDeviceInterface, error) {
+	allParents, err := m.GetAllParentDevices()
+	if err != nil {
+		return nil, fmt.Errorf("error getting all parent devices: %v", err)
+	}
+
+	// Filter for 'parent' devices that are backed by the physical function
+	parents := []ParentDeviceInterface{}
+	for _, p := range allParents {
+		pf := p.GetPhysicalFunction()
+		if pf.Address == address {
+			parents = append(parents, p)
+		}
+	}
+
+	if len(parents) == 0 {
+		return nil, fmt.Errorf("no parent devices found for GPU at address '%s'", address)
+	}
+	return parents, nil
+}
+
 // GetAllDevices returns all vGPU device instances as a common interface type
 func (m *VGPUCombinedManager) GetAllDevices() ([]DeviceInterface, error) {
 	if m.isVFIOMode {
@@ -124,3 +145,44 @@ func (m *VGPUCombinedManager) GetAllDevices() ([]DeviceInterface, error) {
 	}
 	return result, nil
 }
+
+func (m *VGPUCombinedManager) CreateVGPUDevices(device *nvpci.NvidiaPCIDevice, vgpuType string, count int) error {
+	remainingToCreate := count
+	parents, err := m.GetAllParentDevicesbyAddress(device.Address)
+	if err != nil {
+		return fmt.Errorf("error getting all parent devices by address: %v", err)
+	}
+	for _, parent := range parents {
+		if remainingToCreate == 0 {
+			break
+		}
+		available, err := parent.GetAvailableVGPUInstances(vgpuType)
+		if err != nil {
+			return fmt.Errorf("error getting available vGPU instances: %v", err)
+		}
+		if available <= 0 {
+			continue
+		}
+
+		numToCreate := min(remainingToCreate, available)
+		for i := 0; i < numToCreate; i++ {
+			if m.combined.IsVFIOMode() {
+				err = parent.CreateVGPUDevice(vgpuType, strconv.Itoa(i))
+				if err != nil {
+					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", key, parent.GetPhysicalFunction().Address, err)
+				}
+			} else {
+				err = parent.CreateVGPUDevice(vgpuType, uuid.New().String())
+				if err != nil {
+					return fmt.Errorf("unable to create %s vGPU device on parent device %s: %v", vgpuType, parent.GetPhysicalFunction().Address, err)
+				}
+			}
+		}
+		remainingToCreate -= numToCreate
+	}
+	if remainingToCreate > 0 {
+		return fmt.Errorf("failed to create %[1]d %[2]s vGPU devices on the GPU. ensure '%[1]d' does not exceed the maximum supported instances for '%[2]s'", count, vgpuType)
+	}
+	return nil
+}
+
