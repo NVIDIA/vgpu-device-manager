@@ -36,7 +36,10 @@ func VGPUConfig(c *Context) error {
 
 	matched := make([]bool, len(gpus))
 	err = WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
-		configManager := vgpu.NewNvlibVGPUConfigManager()
+		configManager, err := vgpu.NewNvlibVGPUConfigManager()
+		if err != nil {
+			return fmt.Errorf("error creating vGPU config manager: %v", err)
+		}
 		current, err := configManager.GetVGPUConfig(i)
 		if err != nil {
 			return fmt.Errorf("error getting vGPU config: %v", err)
