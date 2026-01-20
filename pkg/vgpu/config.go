@@ -20,13 +20,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
-	vgpu_combined "github.com/NVIDIA/vgpu-device-manager/internal/vgpu-combined"
+	vgpulib "github.com/NVIDIA/vgpu-device-manager/internal/vgpu"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
-)
-
-const (
-	HostPCIDevicesRoot = "/host/sys/bus/pci/devices"
 )
 
 // Manager represents a set of functions for managing vGPU configurations on a node
@@ -37,26 +34,28 @@ type Manager interface {
 }
 
 type nvlibVGPUConfigManager struct {
-	combined *vgpu_combined.VGPUCombinedManager
+	vgpu  vgpulib.Interface
+	nvpci nvpci.Interface
 }
 
 var _ Manager = (*nvlibVGPUConfigManager)(nil)
 
 // NewNvlibVGPUConfigManager returns a new vGPU Config Manager which uses go-nvlib when creating / deleting vGPU devices
 func NewNvlibVGPUConfigManager() (Manager, error) {
-	combined, err := vgpu_combined.NewVGPUCombinedManager()
+	vgpuInstance, err := vgpulib.New()
 	if err != nil {
-		return nil, fmt.Errorf("error creating vGPU combined manager: %v", err)
+		return nil, fmt.Errorf("error creating vGPU manager: %v", err)
 	}
 
 	return &nvlibVGPUConfigManager{
-		combined: combined,
+		vgpu:  vgpuInstance,
+		nvpci: nvpci.New(),
 	}, nil
 }
 
 // GetVGPUConfig gets the 'VGPUConfig' currently applied to a GPU at a particular index
 func (m *nvlibVGPUConfigManager) GetVGPUConfig(gpu int) (types.VGPUConfig, error) {
-	device, err := m.combined.GetNvpci().GetGPUByIndex(gpu)
+	device, err := m.nvpci.GetGPUByIndex(gpu)
 	if err != nil {
 		return nil, fmt.Errorf("error getting device at index '%d': %v", gpu, err)
 	}
@@ -94,10 +93,16 @@ func (m *nvlibVGPUConfigManager) GetVGPUConfig(gpu int) (types.VGPUConfig, error
 
 // SetVGPUConfig applies the selected `VGPUConfig` to a GPU at a particular index if it is not already applied
 func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
-	device, err := m.combined.GetNvpci().GetGPUByIndex(gpu)
+	device, err := m.nvpci.GetGPUByIndex(gpu)
 	if err != nil {
 		return fmt.Errorf("error getting device at index '%d': %v", gpu, err)
 	}
+
+	ret := nvml.Init()
+	if ret != nvml.SUCCESS {
+		return fmt.Errorf("failed to initialize NVML: %v", nvml.ErrorString(ret))
+	}
+	defer nvml.Shutdown()
 
 	nvmlDevice, ret := nvml.DeviceGetHandleByPciBusId(device.Address)
 	if ret != nvml.SUCCESS {
@@ -108,7 +113,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	if ret != nvml.SUCCESS {
 		return fmt.Errorf("failed to get supported vGPUs: %v", nvml.ErrorString(ret))
 	}
-    
+
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
 	// the config are supported for the GPU we are applying the configuration to.
 	//
@@ -162,7 +167,7 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 		if !found {
 			return fmt.Errorf("vGPU type %s is not creatable on GPU (index=%d, address=%s)", key, gpu, device.Address)
 		}
-		err = m.combined.CreateVGPUDevices(device, key, val)
+		err = m.vgpu.CreateVGPUDevices(device, key, val)
 		if err != nil {
 			return fmt.Errorf("error creating vGPU devices: %v", err)
 		}
@@ -172,12 +177,12 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 
 // ClearVGPUConfig clears the 'VGPUConfig' for a GPU at a particular index by deleting all vGPU devices associated with it
 func (m *nvlibVGPUConfigManager) ClearVGPUConfig(gpu int) error {
-	device, err := m.combined.GetNvpci().GetGPUByIndex(gpu)
+	device, err := m.nvpci.GetGPUByIndex(gpu)
 	if err != nil {
 		return fmt.Errorf("error getting device at index '%d': %v", gpu, err)
 	}
 
-	vgpuDevs, err := m.combined.GetAllDevices()
+	vgpuDevs, err := m.vgpu.GetAllDevices()
 	if err != nil {
 		return fmt.Errorf("error getting all vGPU devices: %v", err)
 	}
@@ -193,13 +198,6 @@ func (m *nvlibVGPUConfigManager) ClearVGPUConfig(gpu int) error {
 	}
 
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // stripVGPUConfigSuffix removes MIG profile attribute suffixes (ME, NOME, MEALL, GFX) from vGPU config type names
