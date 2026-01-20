@@ -46,6 +46,8 @@ FROM nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.12.3-ubi9 as mig-manager
 FROM nvcr.io/nvidia/distroless/go:v3.1.13-dev
 
 ENV NVIDIA_VISIBLE_DEVICES=void
+# Preload NVIDIA NVML library from the driver mounted at /driver-root
+ENV LD_PRELOAD=/driver-root/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
 
 COPY --from=build /artifacts/nvidia-vgpu-dm /usr/bin/nvidia-vgpu-dm
 COPY --from=build /artifacts/nvidia-k8s-vgpu-dm /usr/bin/nvidia-k8s-vgpu-dm
