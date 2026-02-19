@@ -41,7 +41,7 @@ ARG VERSION="N/A"
 ARG GIT_COMMIT="unknown"
 RUN make PREFIX=/artifacts cmds
 
-FROM nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.12.3-ubi9 as mig-manager
+FROM nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.13.1 as mig-manager
 
 FROM nvcr.io/nvidia/distroless/go:v4.0.1-dev
 
@@ -49,7 +49,7 @@ ENV NVIDIA_VISIBLE_DEVICES=void
 
 COPY --from=build /artifacts/nvidia-vgpu-dm /usr/bin/nvidia-vgpu-dm
 COPY --from=build /artifacts/nvidia-k8s-vgpu-dm /usr/bin/nvidia-k8s-vgpu-dm
-COPY --from=mig-manager  /usr/bin/nvidia-mig-parted /usr/bin/nvidia-mig-parted
+COPY --from=mig-manager /usr/bin/nvidia-mig-parted /usr/bin/nvidia-mig-parted
 
 LABEL version="${VERSION}"
 LABEL release="N/A"
