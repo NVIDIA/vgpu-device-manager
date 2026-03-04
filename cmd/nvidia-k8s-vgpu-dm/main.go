@@ -374,6 +374,12 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 	if err != nil {
 		return fmt.Errorf("unable to shutdown gpu operands: %v", err)
 	}
+	defer func() {
+		log.Info("Restarting all GPU operands previously shutdown in Kubernetes by enabling their component-specific nodeSelector labels")
+		if err := rescheduleGPUOperands(clientset); err != nil {
+			log.Errorf("Unable to reschedule gpu operands: %v", err)
+		}
+	}()
 
 	if err := handleMIGConfiguration(clientset, selectedConfig); err != nil {
 		return fmt.Errorf("unable to handle MIG configuration: %v", err)
@@ -383,12 +389,6 @@ func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error 
 	err = applyConfig(selectedConfig)
 	if err != nil {
 		return fmt.Errorf("unable to apply config '%s': %v", selectedConfig, err)
-	}
-
-	log.Info("Restarting all GPU operands previously shutdown in Kubernetes by enabling their component-specific nodeSelector labels")
-	err = rescheduleGPUOperands(clientset)
-	if err != nil {
-		return fmt.Errorf("unable to reschedule gpu operands: %v", err)
 	}
 
 	return nil
