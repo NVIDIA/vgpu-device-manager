@@ -35,9 +35,9 @@ stages:
   - ngc-publish
 
 # Define the distribution targets
-.dist-ubi9:
+.dist:
   variables:
-    DIST: ubi9
+    DIST: distroless
 
 # Define the platform targets
 .platform-amd64:
@@ -144,9 +144,9 @@ stages:
         OUT_IMAGE_VERSION: "${DEVEL_RELEASE_IMAGE_VERSION}"
 
 # Define the release jobs
-release:staging-ubi9:
+release:staging:
   extends:
     - .release:staging
-    - .dist-ubi9
+    - .dist
   needs:
-    - image-ubi9
+    - image
