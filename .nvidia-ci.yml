@@ -65,10 +65,10 @@ variables:
     - regctl registry login "${OUT_REGISTRY}" -u "${OUT_REGISTRY_USER}" -p "${OUT_REGISTRY_TOKEN}"
     - make -f deployments/container/Makefile IMAGE=${IN_REGISTRY}/${IN_IMAGE_NAME}:${IN_VERSION} OUT_IMAGE=${OUT_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} push-${DIST}
 
-image-ubi9:
+image:
   extends:
     - .image-pull
-    - .dist-ubi9
+    - .dist
 
 # We skip the integration tests for the internal CI:
 .integration:
@@ -110,18 +110,17 @@ image-ubi9:
       - vulns.json
       - policy_evaluation.json
 
-# The .scan-ubi9 steps forms the base for all ubi9 image scans across supported architectures
-.scan-ubi9:
+.scan-base:
   extends:
     - .scan
-    - .dist-ubi9
+    - .dist
   needs:
-    - image-ubi9
+    - image
 
 # Define the scan targets
-scan-ubi9-amd64:
+scan-amd64:
   extends:
-    - .scan-ubi9
+    - .scan-base
     - .platform-amd64
 
 .ngc-publish-variables:
@@ -136,7 +135,7 @@ scan-ubi9-amd64:
 .update-nspect:
   stage: ngc-publish
   needs:
-    - job: release:staging-ubi9
+    - job: release:staging
   extends:
     - .ngc-publish-variables
   image: 
