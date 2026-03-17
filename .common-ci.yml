@@ -149,4 +149,4 @@ release:staging:
     - .release:staging
     - .dist
   needs:
-    - image
+    - container-image
