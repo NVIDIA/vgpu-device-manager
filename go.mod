@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/NVIDIA/go-nvlib v0.9.0
-	github.com/NVIDIA/mig-parted v0.13.1
+	github.com/NVIDIA/mig-parted v0.14.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.4
