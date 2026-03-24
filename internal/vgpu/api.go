@@ -6,14 +6,14 @@ import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 )
 
-// Interface defines the vGPU manager operations
+// Interface is the exported vGPU manager API (implemented by *nvvfio and *nvmdev).
 type Interface interface {
 	GetAllDevices() ([]Device, error)
 	GetAllParentDevices() ([]ParentDevice, error)
 	CreateVGPUDevices(device *nvpci.NvidiaPCIDevice, vgpuType string, count int) error
 }
 
-// ParentDevice represents a common interface for both VFIO and MDEV parent devices
+// ParentDevice is implemented by *vfioParentDevice and *mdevParentDevice.
 type ParentDevice interface {
 	GetPhysicalFunction() *nvpci.NvidiaPCIDevice
 	IsVGPUTypeAvailable(string) (bool, error)
@@ -21,25 +21,23 @@ type ParentDevice interface {
 	GetAvailableVGPUInstances(string) (int, error)
 }
 
-// Device represents a common interface for both VFIO and MDEV vGPU device instances
+// Device is implemented by *vfioDevice and *mdevDevice.
 type Device interface {
 	GetPhysicalFunction() *nvpci.NvidiaPCIDevice
 	Delete() error
 }
 
-// New creates a new vGPU manager (either VFIO or MDEV based)
+// New returns an Interface, selecting *nvvfio when isVFIOEnabled(0) is true, otherwise *nvmdev from newNvmdev().
 func New() (Interface, error) {
-	vfioInstance := NewNvvfio()
+	vfioInstance := newNvvfio()
 
-	// Determine mode once at initialization
-	isVFIOMode, err := vfioInstance.IsVFIOEnabled(0)
+	isVFIOMode, err := vfioInstance.isVFIOEnabled(0)
 	if err != nil {
-		return nil, fmt.Errorf("error checking VFIO mode: %v", err)
+		return nil, fmt.Errorf("error checking VFIO mode: %w", err)
 	}
 
 	if isVFIOMode {
 		return vfioInstance, nil
 	}
-	// Use MDEV mode
-	return NewNvmdev(), nil
+	return newNvmdev(), nil
 }
