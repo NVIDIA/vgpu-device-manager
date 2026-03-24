@@ -22,6 +22,7 @@ import (
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvpci"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	
 	vgpulib "github.com/NVIDIA/vgpu-device-manager/internal/vgpu"
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
@@ -126,27 +127,22 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	// check if DC-1-24QGFX is a valid vGPU type. Since it is not a valid type, it would
 	// strip the GFX suffix and proceed to check if DC-1-24Q is a valid type.
 	sanitizedConfig := types.VGPUConfig{}
+	supportedVGPUTypes := map[string]bool{}
+	for _, vgpuTypeId := range supportedVGPUs {
+		rawName, ret := vgpuTypeId.GetName()
+		if ret != nvml.SUCCESS {
+			continue
+		}
+		name := parseVGPUTypeName(rawName)
+		supportedVGPUTypes[name] = true
+	}
 	for key, val := range config {
 		strippedKey := stripVGPUConfigSuffix(key)
-		found := false
-		for _, vgpuTypeId := range supportedVGPUs {
-			rawName, ret := vgpuTypeId.GetName()
-			if ret != nvml.SUCCESS {
-				continue
-			}
-			name := parseVGPUTypeName(rawName)
-			if name == key {
-				found = true
-				sanitizedConfig[key] = val
-				break
-			}
-			if name == strippedKey {
-				found = true
-				sanitizedConfig[strippedKey] = val
-				break
-			}
-		}
-		if !found {
+		if _, ok := supportedVGPUTypes[key]; ok {
+			sanitizedConfig[key] = val
+		} else if _, ok := supportedVGPUTypes[strippedKey]; ok {
+			sanitizedConfig[strippedKey] = val
+		} else {
 			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
 		}
 	}
