@@ -205,7 +205,7 @@ func WalkSelectedVGPUConfigForEachGPU(vgpuConfig v1.VGPUConfigSpecSlice, f func(
 		}
 
 		for i, gpu := range gpus {
-			deviceID := types.NewDeviceID(gpu.Device, gpu.Vendor)
+			deviceID := types.NewDeviceIDWithSubsystem(gpu.Device, gpu.Vendor, gpu.SubsystemDevice, gpu.SubsystemVendor)
 
 			if !vc.MatchesDeviceFilter(deviceID) {
 				continue

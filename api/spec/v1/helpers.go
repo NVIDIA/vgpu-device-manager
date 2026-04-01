@@ -37,8 +37,8 @@ func (vs *VGPUConfigSpec) MatchesDeviceFilter(deviceID types.DeviceID) bool {
 	}
 
 	for _, df := range deviceFilter {
-		newDeviceID, _ := types.NewDeviceIDFromString(df)
-		if newDeviceID == deviceID {
+		filterDeviceID, _ := types.NewDeviceIDFromString(df)
+		if filterDeviceID.Matches(deviceID) {
 			return true
 		}
 	}
