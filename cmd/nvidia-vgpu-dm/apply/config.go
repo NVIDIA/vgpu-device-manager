@@ -28,7 +28,10 @@ import (
 // VGPUConfig applies the selected vGPU config to the node
 func VGPUConfig(c *Context) error {
 	return assert.WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
-		configManager := vgpu.NewNvlibVGPUConfigManager()
+		configManager, err := vgpu.NewNvlibVGPUConfigManager()
+		if err != nil {
+			return fmt.Errorf("error creating vGPU config manager: %v", err)
+		}
 		current, err := configManager.GetVGPUConfig(i)
 		if err != nil {
 			return fmt.Errorf("error getting vGPU config: %v", err)
