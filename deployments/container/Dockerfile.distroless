@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM golang:1.26.0 AS build
+FROM golang:1.26.1 AS build
 
 ARG GOPROXY="https://proxy.golang.org,direct"
 ENV GOPROXY=$GOPROXY
@@ -25,7 +25,7 @@ RUN make PREFIX=/artifacts cmds
 
 FROM nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.13.1 as mig-manager
 
-FROM nvcr.io/nvidia/distroless/go:v4.0.2-dev
+FROM nvcr.io/nvidia/distroless/go:v4.0.3-dev
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
