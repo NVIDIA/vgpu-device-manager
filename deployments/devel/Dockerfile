@@ -11,10 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GOLANG_VERSION
-FROM golang:${GOLANG_VERSION}
+FROM golang:1.25.3
+
+WORKDIR /work
 
 RUN go install golang.org/x/lint/golint@latest
 RUN go install github.com/matryer/moq@latest
 RUN go install github.com/gordonklaus/ineffassign@latest
 RUN go install github.com/client9/misspell/cmd/misspell@latest
+
+# We need to set the /work directory as a safe directory.
+# This allows git commands to run in the container.
+RUN git config --file=/.gitconfig --add safe.directory /work
