@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM golang:1.26.1 AS build
+ARG GOLANG_VERSION=0.0.0
+
+FROM golang:$GOLANG_VERSION AS build
 
 ARG GOPROXY="https://proxy.golang.org,direct"
 ENV GOPROXY=$GOPROXY
