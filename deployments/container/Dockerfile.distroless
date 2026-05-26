@@ -27,9 +27,25 @@ RUN make PREFIX=/artifacts cmds
 
 FROM nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.13.1 as mig-manager
 
-FROM nvcr.io/nvidia/distroless/go:v4.0.3-dev
+# Build a static busybox layout: one binary plus applet symlinks (sh, rm,
+# ln, sleep, cat, ...) so PATH-resolved commands in init-container wrappers
+# and lifecycle hooks keep working on the non-*-dev* distroless base.
+FROM debian:trixie-slim AS shell
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends busybox-static \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir /busybox \
+ && cp /bin/busybox /busybox/busybox \
+ && /busybox/busybox --install -s /busybox
+
+FROM nvcr.io/nvidia/distroless/go:v4.0.3
 
 ENV NVIDIA_VISIBLE_DEVICES=void
+
+COPY --from=shell /busybox /busybox
+USER 0:0
+RUN ["/busybox/ln", "-s", "/busybox/sh", "/bin/sh"]
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/busybox
 
 COPY --from=build /artifacts/nvidia-vgpu-dm /usr/bin/nvidia-vgpu-dm
 COPY --from=build /artifacts/nvidia-k8s-vgpu-dm /usr/bin/nvidia-k8s-vgpu-dm
