@@ -31,6 +31,13 @@ type Manager interface {
 	GetVGPUConfig(gpu int) (types.VGPUConfig, error)
 	SetVGPUConfig(gpu int, config types.VGPUConfig) error
 	ClearVGPUConfig(gpu int) error
+	// NormalizeVGPUConfig returns the config as it would be realized on the
+	// GPU at a particular index: vGPU types that are only supported without
+	// their MIG attribute suffix are mapped to the supported name. This is
+	// the form GetVGPUConfig reports after the config has been applied, so
+	// callers must compare against the normalized config when checking
+	// whether a config is already applied.
+	NormalizeVGPUConfig(gpu int, config types.VGPUConfig) (types.VGPUConfig, error)
 }
 
 type nvlibVGPUConfigManager struct {
@@ -94,25 +101,9 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 
 	// Before deleting any existing vGPU devices, ensure all vGPU types specified in
 	// the config are supported for the GPU we are applying the configuration to.
-	//
-	// For MIG-backed vGPU types, it may be required to strip the MIG attribute suffix
-	// from the vGPU type name before creating the vGPU device. For example, for RTX Pro
-	// 6000 Blackwell, all the MIG-backed vGPU types are only supported on MIG instances
-	// created with the GFX attribute, but none of the vGPU type names contain the GFX
-	// suffix. Taking the DC-1-24QGFX config as an example, the below code would first
-	// check if DC-1-24QGFX is a valid vGPU type. Since it is not a valid type, it would
-	// strip the GFX suffix and proceed to check if DC-1-24Q is a valid type.
-	sanitizedConfig := types.VGPUConfig{}
-	for key, val := range config {
-		strippedKey := stripVGPUConfigSuffix(key)
-		//nolint:gocritic // using if-else for clarity instead of switch
-		if parents[0].IsMDEVTypeSupported(key) {
-			sanitizedConfig[key] = val
-		} else if parents[0].IsMDEVTypeSupported(strippedKey) {
-			sanitizedConfig[strippedKey] = val
-		} else {
-			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s)", key, gpu, device.Address)
-		}
+	sanitizedConfig, err := sanitizeVGPUConfig(config, parents[0].IsMDEVTypeSupported)
+	if err != nil {
+		return fmt.Errorf("%v on GPU (index=%d, address=%s)", err, gpu, device.Address)
 	}
 
 	err = m.ClearVGPUConfig(gpu)
@@ -158,6 +149,43 @@ func (m *nvlibVGPUConfigManager) SetVGPUConfig(gpu int, config types.VGPUConfig)
 	return nil
 }
 
+// NormalizeVGPUConfig returns the config as it would be realized on the GPU
+// at a particular index, mapping vGPU types that are only supported without
+// their MIG attribute suffix to the supported name.
+func (m *nvlibVGPUConfigManager) NormalizeVGPUConfig(gpu int, config types.VGPUConfig) (types.VGPUConfig, error) {
+	if len(config) == 0 {
+		return config, nil
+	}
+
+	device, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
+	if err != nil {
+		return nil, fmt.Errorf("error getting device at index '%d': %v", gpu, err)
+	}
+
+	allParents, err := m.nvlib.Nvmdev.GetAllParentDevices()
+	if err != nil {
+		return nil, fmt.Errorf("error getting all parent devices: %v", err)
+	}
+
+	parents := []*nvmdev.ParentDevice{}
+	for _, p := range allParents {
+		pf := p.GetPhysicalFunction()
+		if pf.Address == device.Address {
+			parents = append(parents, p)
+		}
+	}
+
+	if len(parents) == 0 {
+		return nil, fmt.Errorf("no parent devices found for GPU at index '%d'", gpu)
+	}
+
+	normalized, err := sanitizeVGPUConfig(config, parents[0].IsMDEVTypeSupported)
+	if err != nil {
+		return nil, fmt.Errorf("%v on GPU (index=%d, address=%s)", err, gpu, device.Address)
+	}
+	return normalized, nil
+}
+
 // ClearVGPUConfig clears the 'VGPUConfig' for a GPU at a particular index by deleting all vGPU devices associated with it
 func (m *nvlibVGPUConfigManager) ClearVGPUConfig(gpu int) error {
 	device, err := m.nvlib.Nvpci.GetGPUByIndex(gpu)
@@ -193,4 +221,43 @@ func min(a, b int) int {
 // stripVGPUConfigSuffix removes MIG profile attribute suffixes (ME, NOME, MEALL, GFX) from vGPU config type names
 func stripVGPUConfigSuffix(configType string) string {
 	return types.StripAttributeSuffix(configType)
+}
+
+// sanitizeVGPUConfig maps every vGPU type in the config to the form
+// supported by the GPU, as reported by the 'isSupported' predicate.
+//
+// For MIG-backed vGPU types, it may be required to strip the MIG attribute
+// suffix from the vGPU type name before creating the vGPU device. For
+// example, for RTX Pro 6000 Blackwell, all the MIG-backed vGPU types are
+// only supported on MIG instances created with the GFX attribute, but none
+// of the vGPU type names contain the GFX suffix. Taking the DC-1-24QGFX
+// config as an example, the code below would first check if DC-1-24QGFX is a
+// valid vGPU type. Since it is not a valid type, it would strip the GFX
+// suffix and proceed to check if DC-1-24Q is a valid type.
+//
+// Two config entries mapping to the same supported type are rejected: the
+// counts of such entries have no well-defined combined meaning.
+func sanitizeVGPUConfig(config types.VGPUConfig, isSupported func(string) bool) (types.VGPUConfig, error) {
+	sanitized := types.VGPUConfig{}
+	matchedBy := make(map[string]string)
+	for key, val := range config {
+		strippedKey := stripVGPUConfigSuffix(key)
+
+		var matched string
+		//nolint:gocritic // using if-else for clarity instead of switch
+		if isSupported(key) {
+			matched = key
+		} else if isSupported(strippedKey) {
+			matched = strippedKey
+		} else {
+			return nil, fmt.Errorf("vGPU type %s is not supported", key)
+		}
+
+		if previous, exists := matchedBy[matched]; exists {
+			return nil, fmt.Errorf("vGPU types %s and %s map to the same supported vGPU type %s", previous, key, matched)
+		}
+		matchedBy[matched] = key
+		sanitized[matched] = val
+	}
+	return sanitized, nil
 }

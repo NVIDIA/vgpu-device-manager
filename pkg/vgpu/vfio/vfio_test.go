@@ -451,6 +451,69 @@ func TestSetVGPUConfig(t *testing.T) {
 		require.Equal(t, "0", readCurrentVGPUType(t, root, "0000:18:00.5"))
 	})
 
+	t.Run("Suffixed config compares equal to the applied state after normalization", func(t *testing.T) {
+		// This mirrors the apply/assert flow: after a suffixed config has
+		// been applied, GetVGPUConfig reports the stripped name the driver
+		// knows. Comparing the current state against the normalized desired
+		// config must report a match, so re-applying is a no-op instead of
+		// a teardown-and-recreate cycle.
+		root := buildFakeSysfs(t, []fakeGPU{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
+				{address: "0000:18:00.4", creatable: "999 : NVIDIA DC-1-24Q\n"},
+			}},
+		})
+		m := newTestManager(t, root)
+
+		desired := types.VGPUConfig{"DC-1-24QGFX": 1}
+		require.NoError(t, m.SetVGPUConfig(0, desired))
+
+		current, err := m.GetVGPUConfig(0)
+		require.NoError(t, err)
+		require.False(t, current.Equals(desired), "raw comparison must mismatch, that is why normalization exists")
+
+		normalized, err := m.NormalizeVGPUConfig(0, desired)
+		require.NoError(t, err)
+		require.True(t, current.Equals(normalized), "got %v, expected %v", current, normalized)
+	})
+
+	t.Run("Config entries colliding after suffix stripping are rejected before clearing", func(t *testing.T) {
+		root := buildFakeSysfs(t, []fakeGPU{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
+				{address: "0000:18:00.4", current: 999, creatable: "999 : NVIDIA DC-1-24Q\n"},
+			}},
+		})
+		m := newTestManager(t, root)
+
+		err := m.SetVGPUConfig(0, types.VGPUConfig{"DC-1-24QGFX": 2, "DC-1-24Q": 3})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "map to the same supported vGPU type")
+
+		// The previously configured vGPU device must not have been cleared.
+		require.Equal(t, "999", readCurrentVGPUType(t, root, "0000:18:00.4"))
+	})
+
+	t.Run("Supported suffixed type is not substituted with its base type", func(t *testing.T) {
+		// The resolver knows the suffixed type as a distinct type, but the
+		// VF cannot currently create it: the request must fail instead of
+		// silently creating the base type.
+		root := buildFakeSysfs(t, []fakeGPU{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
+				{address: "0000:18:00.4", creatable: "999 : NVIDIA DC-1-24Q\n"},
+			}},
+		})
+		resolver := &fakeResolver{supported: map[int]string{
+			1001: "NVIDIA DC-1-24QGFX",
+		}}
+		m := newTestManager(t, root, WithTypeResolver(resolver))
+
+		err := m.SetVGPUConfig(0, types.VGPUConfig{"DC-1-24QGFX": 1})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to create")
+
+		// The base type must not have been created instead.
+		require.Equal(t, "0", readCurrentVGPUType(t, root, "0000:18:00.4"))
+	})
+
 	t.Run("Re-applying the same config is idempotent", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
 			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
@@ -590,6 +653,99 @@ func TestMdevManagedVFs(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "NVIDIA vGPU Manager driver")
 	})
+}
+
+func TestTypeRegistryCandidatePriority(t *testing.T) {
+	// A supported suffixed type must never be silently substituted with its
+	// base type: the exact name is exhausted against all sources (sysfs
+	// creatable lists, then the resolver) before the stripped name is
+	// considered.
+	root := buildFakeSysfs(t, []fakeGPU{
+		{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
+			{address: "0000:18:00.4", creatable: "999 : NVIDIA DC-1-24Q\n"},
+		}},
+	})
+	resolver := &fakeResolver{supported: map[int]string{
+		1001: "NVIDIA DC-1-24QGFX",
+	}}
+	m := newTestManager(t, root, WithTypeResolver(resolver)).(*manager)
+
+	pf := device{root: root, address: "0000:18:00.0"}
+	vfs, err := pf.virtualFunctions()
+	require.NoError(t, err)
+
+	registry := m.newTypeRegistry(pf, vfs)
+	id, name, err := registry.idForName("DC-1-24QGFX")
+	require.NoError(t, err)
+	require.Equal(t, 1001, id)
+	require.Equal(t, "DC-1-24QGFX", name)
+
+	// The base name still resolves to the sysfs-provided type.
+	id, name, err = registry.idForName("DC-1-24Q")
+	require.NoError(t, err)
+	require.Equal(t, 999, id)
+	require.Equal(t, "DC-1-24Q", name)
+}
+
+func TestNormalizeVGPUConfig(t *testing.T) {
+	testCases := []struct {
+		description string
+		creatable   string
+		config      types.VGPUConfig
+		expected    types.VGPUConfig
+		expectError string
+	}{
+		{
+			description: "Suffixed type is normalized to the supported base type",
+			creatable:   "999 : NVIDIA DC-1-24Q\n",
+			config:      types.VGPUConfig{"DC-1-24QGFX": 1},
+			expected:    types.VGPUConfig{"DC-1-24Q": 1},
+		},
+		{
+			description: "Exactly supported type is kept",
+			creatable:   creatableH200,
+			config:      types.VGPUConfig{"H200X-1-18C": 2},
+			expected:    types.VGPUConfig{"H200X-1-18C": 2},
+		},
+		{
+			description: "Empty config stays empty",
+			creatable:   creatableH200,
+			config:      types.VGPUConfig{},
+			expected:    types.VGPUConfig{},
+		},
+		{
+			description: "Unsupported type is rejected",
+			creatable:   creatableH200,
+			config:      types.VGPUConfig{"T4-16Q": 1},
+			expectError: "not supported",
+		},
+		{
+			description: "Types colliding after suffix stripping are rejected",
+			creatable:   "999 : NVIDIA DC-1-24Q\n",
+			config:      types.VGPUConfig{"DC-1-24QGFX": 2, "DC-1-24Q": 3},
+			expectError: "map to the same supported vGPU type",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			root := buildFakeSysfs(t, []fakeGPU{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
+					{address: "0000:18:00.4", creatable: tc.creatable},
+				}},
+			})
+			m := newTestManager(t, root)
+
+			normalized, err := m.NormalizeVGPUConfig(0, tc.config)
+			if tc.expectError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectError)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, normalized.Equals(tc.expected), "got %v, expected %v", normalized, tc.expected)
+		})
+	}
 }
 
 func TestSriovManageArgs(t *testing.T) {
