@@ -18,7 +18,6 @@ package vgpu
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/NVIDIA/go-nvlib/pkg/nvmdev"
 	"github.com/google/uuid"
@@ -193,17 +192,5 @@ func min(a, b int) int {
 
 // stripVGPUConfigSuffix removes MIG profile attribute suffixes (ME, NOME, MEALL, GFX) from vGPU config type names
 func stripVGPUConfigSuffix(configType string) string {
-	suffixes := []string{
-		types.AttributeMediaExtensionsAll, // MEALL - check first as it contains ME
-		types.AttributeNoMediaExtensions,  // NOME
-		types.AttributeMediaExtensions,    // ME
-		types.AttributeGraphics,           // GFX
-	}
-
-	for _, suffix := range suffixes {
-		if strings.HasSuffix(configType, suffix) {
-			return strings.TrimSuffix(configType, suffix)
-		}
-	}
-	return configType
+	return types.StripAttributeSuffix(configType)
 }
