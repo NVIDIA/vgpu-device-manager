@@ -427,6 +427,9 @@ func applyConfig(config string) error {
 		"-c", config,
 	}
 	cmd := exec.Command(cliName, args...)
+	// Propagate the host root mount so that the vendor-specific VFIO backend
+	// can run host binaries (e.g. sriov-manage) when enabling SR-IOV VFs.
+	cmd.Env = append(os.Environ(), fmt.Sprintf("VGPU_DM_HOST_ROOT_MOUNT=%s", hostRootMountFlag))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
