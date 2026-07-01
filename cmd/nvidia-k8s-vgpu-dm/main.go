@@ -41,6 +41,7 @@ import (
 	migpartedv1 "github.com/NVIDIA/mig-parted/api/spec/v1"
 
 	v1 "github.com/NVIDIA/vgpu-device-manager/api/spec/v1"
+	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/apply"
 	"github.com/NVIDIA/vgpu-device-manager/cmd/nvidia-vgpu-dm/assert"
 	"github.com/NVIDIA/vgpu-device-manager/internal/info"
 )
@@ -429,7 +430,7 @@ func applyConfig(config string) error {
 	cmd := exec.Command(cliName, args...)
 	// Propagate the host root mount so that the vendor-specific VFIO backend
 	// can run host binaries (e.g. sriov-manage) when enabling SR-IOV VFs.
-	cmd.Env = append(os.Environ(), fmt.Sprintf("VGPU_DM_HOST_ROOT_MOUNT=%s", hostRootMountFlag))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", apply.HostRootMountEnvVar, hostRootMountFlag))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

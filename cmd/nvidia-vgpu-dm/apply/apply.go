@@ -27,6 +27,10 @@ import (
 
 var log = logrus.New()
 
+// HostRootMountEnvVar is the environment variable used to pass the container
+// path where the host root directory is mounted to the 'apply' command.
+const HostRootMountEnvVar = "VGPU_DM_HOST_ROOT_MOUNT"
+
 // GetLogger returns the logger for the 'apply' command
 func GetLogger() *logrus.Logger {
 	return log
@@ -75,7 +79,7 @@ func BuildCommand() *cli.Command {
 			Aliases:     []string{"m"},
 			Usage:       "Container path where the host root directory is mounted; used to run host binaries (e.g. sriov-manage) when configuring vGPU devices on the vendor-specific VFIO framework",
 			Destination: &applyFlags.HostRootMount,
-			EnvVars:     []string{"VGPU_DM_HOST_ROOT_MOUNT"},
+			EnvVars:     []string{HostRootMountEnvVar},
 		},
 	}
 
