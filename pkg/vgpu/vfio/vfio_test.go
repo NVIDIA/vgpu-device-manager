@@ -36,10 +36,11 @@ const (
 
 // fakeVF describes a single SR-IOV virtual function in the fake sysfs tree.
 type fakeVF struct {
-	address     string
-	current     int
-	creatable   string
-	noVGPUSysfs bool
+	address            string
+	current            int
+	creatable          string
+	noVGPUSysfs        bool
+	mdevSupportedTypes bool
 }
 
 // fakeGPU describes a single NVIDIA GPU (SR-IOV physical function) in the
@@ -103,6 +104,10 @@ func addFakeVF(t *testing.T, root, pfAddress string, index int, vf fakeVF) {
 	require.NoError(t, os.Symlink(filepath.Join("drivers", "nvidia"), filepath.Join(vfDir, "driver")))
 	require.NoError(t, os.Symlink(pfAddress, filepath.Join(vfDir, "physfn")))
 	require.NoError(t, os.Symlink(vf.address, filepath.Join(root, pfAddress, fmt.Sprintf("virtfn%d", index))))
+
+	if vf.mdevSupportedTypes {
+		require.NoError(t, os.MkdirAll(filepath.Join(vfDir, "mdev_supported_types", "nvidia-556"), 0755))
+	}
 
 	if vf.noVGPUSysfs {
 		return
@@ -534,25 +539,85 @@ func TestGPUEnumeration(t *testing.T) {
 	})
 }
 
-func TestGPUInstanceIDAvailability(t *testing.T) {
-	// The 'gpu_instance_id', 'placement_id' and 'vgpu_params' attributes of a
-	// VF are only readable after a vGPU type has been set on it. Reads before
-	// that must surface as errors that callers treat as "not available".
-	root := buildFakeSysfs(t, []fakeGPU{
-		{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
-			{address: "0000:18:00.4", creatable: creatableH200},
-			{address: "0000:18:00.5", current: 1414},
-		}},
+func TestMdevManagedVFs(t *testing.T) {
+	// On GPUs whose vGPU devices are managed through the mdev framework
+	// (e.g. Ampere), the mdev parent devices are also SR-IOV VFs, but they
+	// carry an 'mdev_supported_types' directory instead of the
+	// vendor-specific 'nvidia' directory. Before the VFs are enabled such a
+	// system is indistinguishable from a vendor-VFIO one, so the vfio
+	// backend may be selected; once the VFs turn out to be mdev-managed, it
+	// must fail with an error pointing at the mdev framework instead of
+	// blaming the driver installation.
+	buildMdevSysfs := func(t *testing.T) string {
+		t.Helper()
+		root := buildFakeSysfs(t, []fakeGPU{
+			{address: "0000:41:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:41:00.4", noVGPUSysfs: true, mdevSupportedTypes: true},
+			}},
+		})
+		return root
+	}
+
+	t.Run("GetVGPUConfig reports the mdev framework", func(t *testing.T) {
+		m := newTestManager(t, buildMdevSysfs(t))
+		_, err := m.GetVGPUConfig(0)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mdev framework")
 	})
 
-	unconfigured := device{root: root, address: "0000:18:00.4"}
-	_, err := unconfigured.gpuInstanceID()
-	require.Error(t, err)
+	t.Run("SetVGPUConfig reports the mdev framework before clearing", func(t *testing.T) {
+		m := newTestManager(t, buildMdevSysfs(t))
+		err := m.SetVGPUConfig(0, types.VGPUConfig{"A100-40C": 1})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mdev framework")
+	})
 
-	configured := device{root: root, address: "0000:18:00.5"}
-	id, err := configured.gpuInstanceID()
-	require.NoError(t, err)
-	require.Equal(t, 0, id)
+	t.Run("ClearVGPUConfig reports the mdev framework", func(t *testing.T) {
+		m := newTestManager(t, buildMdevSysfs(t))
+		err := m.ClearVGPUConfig(0)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mdev framework")
+	})
+
+	t.Run("VF without any vGPU interface still blames the driver", func(t *testing.T) {
+		root := buildFakeSysfs(t, []fakeGPU{
+			{address: "0000:41:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:41:00.4", noVGPUSysfs: true},
+			}},
+		})
+		m := newTestManager(t, root)
+		_, err := m.GetVGPUConfig(0)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "NVIDIA vGPU Manager driver")
+	})
+}
+
+func TestSriovManageArgs(t *testing.T) {
+	t.Run("Without a host root mount the script is run directly", func(t *testing.T) {
+		args := sriovManageArgs("", "0000:18:00.0")
+		require.Equal(t, []string{DefaultSriovManagePath, "-e", "0000:18:00.0"}, args)
+	})
+
+	t.Run("With a host root mount the script is run through chroot", func(t *testing.T) {
+		args := sriovManageArgs("/host", "0000:18:00.0")
+		require.Equal(t, []string{"chroot", "/host", DefaultSriovManagePath, "-e", "0000:18:00.0"}, args)
+	})
+}
+
+func TestSriovManageEnableValidation(t *testing.T) {
+	// Invalid PCI addresses must be rejected before any command is run.
+	enable := sriovManageEnable("")
+	for _, address := range []string{
+		"",
+		"not-an-address",
+		"../../../etc/passwd",
+		"0000:18:00.0; rm -rf /",
+		"0000:18:00",
+	} {
+		err := enable(address)
+		require.Error(t, err, "address %q must be rejected", address)
+		require.Contains(t, err.Error(), "invalid PCI address")
+	}
 }
 
 func TestHasVGPUCapableDevices(t *testing.T) {

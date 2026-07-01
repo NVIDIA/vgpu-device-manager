@@ -161,7 +161,7 @@ func (m *manager) GetVGPUConfig(gpu int) (types.VGPUConfig, error) {
 	registry := m.newTypeRegistry(pf, vfs)
 	for _, vf := range vfs {
 		if !vf.hasVGPUSysfs() {
-			return nil, fmt.Errorf("vGPU sysfs interface not found for VF %s: ensure the NVIDIA vGPU Manager driver is loaded", vf.address)
+			return nil, vgpuSysfsMissingError(vf)
 		}
 		current, err := vf.currentVGPUType()
 		if err != nil {
@@ -194,6 +194,14 @@ func (m *manager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
 	vfs, err := m.ensureVFs(pf)
 	if err != nil {
 		return err
+	}
+
+	// Fail before any vGPU device is deleted if the VFs are not managed
+	// through the vendor-specific VFIO framework.
+	for _, vf := range vfs {
+		if !vf.hasVGPUSysfs() {
+			return vgpuSysfsMissingError(vf)
+		}
 	}
 
 	// Before deleting any existing vGPU devices, ensure all vGPU types
@@ -279,7 +287,7 @@ func (m *manager) ClearVGPUConfig(gpu int) error {
 
 	for _, vf := range vfs {
 		if !vf.hasVGPUSysfs() {
-			return fmt.Errorf("vGPU sysfs interface not found for VF %s: ensure the NVIDIA vGPU Manager driver is loaded", vf.address)
+			return vgpuSysfsMissingError(vf)
 		}
 		current, err := vf.currentVGPUType()
 		if err != nil {
@@ -294,6 +302,20 @@ func (m *manager) ClearVGPUConfig(gpu int) error {
 	}
 
 	return nil
+}
+
+// vgpuSysfsMissingError explains why the vendor-specific VFIO sysfs
+// interface is not present on a VF. On GPUs whose vGPU devices are managed
+// through the mdev framework (e.g. Ampere), the mdev parent devices are also
+// SR-IOV VFs; before the VFs are enabled such a system is indistinguishable
+// from a vendor-VFIO one, so the vfio backend may have been selected for it.
+// Once the VFs are enabled, the mdev bus is populated and the mdev backend
+// is selected instead.
+func vgpuSysfsMissingError(vf device) error {
+	if vf.hasMdevSupportedTypes() {
+		return fmt.Errorf("VF %s exposes vGPU types through the mdev framework: re-run to select the mdev backend now that the virtual functions are enabled", vf.address)
+	}
+	return fmt.Errorf("vGPU sysfs interface not found for VF %s: ensure the NVIDIA vGPU Manager driver is loaded", vf.address)
 }
 
 // gpuByIndex returns the device representing the NVIDIA GPU at a particular index.
@@ -334,22 +356,28 @@ func (m *manager) ensureVFs(pf device) ([]device, error) {
 	return vfs, nil
 }
 
+// sriovManageArgs builds the argument vector for enabling SR-IOV virtual
+// functions on a GPU via the sriov-manage script shipped with the NVIDIA
+// vGPU Manager driver. If hostRootMount is non-empty, the script is run
+// through chroot into it so that the script from the host driver
+// installation is used.
+func sriovManageArgs(hostRootMount, pfAddress string) []string {
+	if hostRootMount != "" {
+		return []string{"chroot", hostRootMount, DefaultSriovManagePath, "-e", pfAddress}
+	}
+	return []string{DefaultSriovManagePath, "-e", pfAddress}
+}
+
 // sriovManageEnable returns a function that enables SR-IOV virtual functions
-// on a GPU by running the sriov-manage script shipped with the NVIDIA vGPU
-// Manager driver. If hostRootMount is non-empty, the script is run through
-// chroot into it.
+// on a GPU by running the sriov-manage script.
 func sriovManageEnable(hostRootMount string) func(pfAddress string) error {
 	return func(pfAddress string) error {
 		if !pciAddressPattern.MatchString(pfAddress) {
 			return fmt.Errorf("invalid PCI address '%s'", pfAddress)
 		}
 
-		var cmd *exec.Cmd
-		if hostRootMount != "" {
-			cmd = exec.Command("chroot", hostRootMount, DefaultSriovManagePath, "-e", pfAddress) // #nosec G204 -- hostRootMount comes from a CLI flag, pfAddress is validated against a PCI address pattern.
-		} else {
-			cmd = exec.Command(DefaultSriovManagePath, "-e", pfAddress) // #nosec G204 -- pfAddress is validated against a PCI address pattern.
-		}
+		args := sriovManageArgs(hostRootMount, pfAddress)
+		cmd := exec.Command(args[0], args[1:]...) // #nosec G204 -- hostRootMount comes from a CLI flag, pfAddress is validated against a PCI address pattern.
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
