@@ -204,9 +204,17 @@ func (d device) virtualFunctions() ([]device, error) {
 }
 
 // gpuAddresses returns the PCI addresses of all NVIDIA GPUs (excluding
-// SR-IOV virtual functions) under the provided PCI devices root, in sysfs
-// enumeration order. The index of an address in the returned slice is the
-// GPU index used throughout this package.
+// SR-IOV virtual functions) under the provided PCI devices root, sorted
+// numerically by PCI address. The index of an address in the returned slice
+// is the GPU index used throughout this package.
+//
+// The addresses are sorted explicitly, using the same numeric ordering as
+// go-nvlib's nvpci.GetGPUs (the callers of this package's Manager derive
+// their GPU indices from that function), rather than relying on the
+// incidental lexicographic order os.ReadDir happens to return sysfs entries
+// in. This keeps GPU indices consistent between the two packages even if
+// that incidental ordering were ever to diverge from numeric PCI address
+// order.
 func gpuAddresses(root string) ([]string, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -220,5 +228,27 @@ func gpuAddresses(root string) ([]string, error) {
 			addresses = append(addresses, entry.Name())
 		}
 	}
+	sortPCIAddresses(addresses)
 	return addresses, nil
+}
+
+// sortPCIAddresses sorts PCI addresses in place, in ascending numeric order.
+// The sort key is computed identically to go-nvlib's nvpci.GetAllDevices, so
+// that this package's GPU indices agree with nvpci's regardless of the
+// order the underlying sysfs entries happen to be enumerated in.
+func sortPCIAddresses(addresses []string) {
+	sort.Slice(addresses, func(i, j int) bool {
+		return pciAddressToID(addresses[i]) < pciAddressToID(addresses[j])
+	})
+}
+
+// pciAddressToID converts a PCI address (domain:bus:device.function) to a
+// numeric value suitable for ordering, by parsing it as a hexadecimal number
+// with its separators removed. Malformed addresses sort as 0, alongside each
+// other and before every well-formed address.
+func pciAddressToID(address string) uint64 {
+	address = strings.ReplaceAll(address, ":", "")
+	address = strings.ReplaceAll(address, ".", "")
+	id, _ := strconv.ParseUint(address, 16, 64)
+	return id
 }
