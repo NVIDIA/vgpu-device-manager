@@ -79,14 +79,9 @@ func (r *nvmlTypeResolver) SupportedVGPUTypes(pfAddress string) (map[int]string,
 // its concrete type is defined as an unsigned integer, so the value is
 // recovered via reflection.
 func numericVGPUTypeID(typeID nvml.VgpuTypeId) (int, error) {
-	v := reflect.ValueOf(typeID)
-	switch v.Kind() {
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	if v := reflect.ValueOf(typeID); v.CanUint() {
 		// nolint:gosec // vGPU type IDs are small positive numbers well within the int range.
 		return int(v.Uint()), nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return int(v.Int()), nil
-	default:
-		return 0, fmt.Errorf("unable to determine the numeric vGPU type ID of %T", typeID)
 	}
+	return 0, fmt.Errorf("unable to determine the numeric vGPU type ID of %T", typeID)
 }
