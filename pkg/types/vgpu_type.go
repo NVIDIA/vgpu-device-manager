@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -41,6 +42,32 @@ const (
 	// contains the number of GPU instances and any additional attributes (i.e. media extensions).
 	migBackedRegex = "^(?P<GPU>[A-Z0-9]+)-(?P<G>[1-9])-(?P<GB>0|[1-9][0-9]*)(?P<S>A|B|C|Q)(?P<ATTR>(ME|NOME|MEALL|GFX))?$"
 )
+
+// StripAttributeSuffix removes a trailing MIG profile attribute suffix
+// (ME, NOME, MEALL, GFX) from a vGPU type name. It returns the name unchanged
+// when no known attribute suffix is present.
+//
+// This is needed because some GPUs (e.g. RTX Pro 6000 Blackwell) only support
+// MIG-backed vGPU types on MIG instances created with a particular attribute
+// (such as GFX), yet the corresponding vGPU type names do not carry that
+// suffix. Stripping the suffix lets the same config type name be matched
+// against the set of types the driver reports as creatable.
+func StripAttributeSuffix(vgpuType string) string {
+	// Order matters: MEALL contains ME, so it must be checked first.
+	suffixes := []string{
+		AttributeMediaExtensionsAll, // MEALL
+		AttributeNoMediaExtensions,  // NOME
+		AttributeMediaExtensions,    // ME
+		AttributeGraphics,           // GFX
+	}
+
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(vgpuType, suffix) {
+			return strings.TrimSuffix(vgpuType, suffix)
+		}
+	}
+	return vgpuType
+}
 
 // VGPUType represents a specific vGPU type.
 // Time-sliced vGPU types appear as <gpu>-<gb><series>.
