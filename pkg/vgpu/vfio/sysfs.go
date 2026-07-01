@@ -38,7 +38,8 @@ const (
 	vgpuSysfsDir           = "nvidia"
 	creatableVGPUTypesFile = "creatable_vgpu_types"
 	currentVGPUTypeFile    = "current_vgpu_type"
-	gpuInstanceIDFile      = "gpu_instance_id"
+
+	mdevSupportedTypesDir = "mdev_supported_types"
 )
 
 // device represents a PCI device under the sysfs PCI devices root.
@@ -133,6 +134,14 @@ func (d device) hasVGPUSysfs() bool {
 	return err == nil && info.IsDir()
 }
 
+// hasMdevSupportedTypes reports whether the device exposes vGPU types
+// through the mediated device (mdev) framework instead of the
+// vendor-specific VFIO framework.
+func (d device) hasMdevSupportedTypes() bool {
+	info, err := os.Stat(d.path(mdevSupportedTypesDir))
+	return err == nil && info.IsDir()
+}
+
 // currentVGPUType returns the numeric ID of the vGPU type currently
 // configured on the device, or 0 if no vGPU device is configured.
 func (d device) currentVGPUType() (int, error) {
@@ -161,13 +170,6 @@ func (d device) setVGPUType(id int) error {
 		return fmt.Errorf("unable to write vGPU type ID: %v", err)
 	}
 	return nil
-}
-
-// gpuInstanceID returns the ID of the MIG GPU instance the vGPU device on
-// this device is bound to. It is only readable after a vGPU type has been
-// set; callers must treat errors as "not available".
-func (d device) gpuInstanceID() (int, error) {
-	return d.readInt(vgpuSysfsDir, gpuInstanceIDFile)
 }
 
 // virtualFunctions returns the SR-IOV virtual functions of the device,
