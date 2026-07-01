@@ -46,11 +46,11 @@ type fakeVF struct {
 // fakeGPU describes a single NVIDIA GPU (SR-IOV physical function) in the
 // fake sysfs tree.
 type fakeGPU struct {
-	address     string
-	class       string
-	driver      string
-	sriovCapabe bool
-	vfs         []fakeVF
+	address      string
+	class        string
+	driver       string
+	sriovCapable bool
+	vfs          []fakeVF
 }
 
 // buildFakeSysfs constructs a fake PCI devices sysfs tree and returns its
@@ -80,7 +80,7 @@ func buildFakeSysfs(t *testing.T, gpus []fakeGPU) string {
 		require.NoError(t, os.WriteFile(filepath.Join(pfDir, "class"), []byte(class+"\n"), 0644))
 		require.NoError(t, os.Symlink(filepath.Join("drivers", driver), filepath.Join(pfDir, "driver")))
 
-		if gpu.sriovCapabe {
+		if gpu.sriovCapable {
 			require.NoError(t, os.WriteFile(filepath.Join(pfDir, "sriov_totalvfs"), []byte("16\n"), 0644))
 			require.NoError(t, os.WriteFile(filepath.Join(pfDir, "sriov_numvfs"), []byte(fmt.Sprintf("%d\n", len(gpu.vfs))), 0644))
 		}
@@ -183,7 +183,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "No VFs enabled returns empty config",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true},
+				{address: "0000:18:00.0", sriovCapable: true},
 			},
 			gpu:      0,
 			expected: types.VGPUConfig{},
@@ -191,7 +191,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "All VFs empty returns empty config",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", creatable: creatableH200},
 					{address: "0000:18:00.5", creatable: creatableH200},
 				}},
@@ -202,7 +202,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "Whole-card vGPU resolved via creatable types of sibling VF",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", current: 1428},
 					{address: "0000:18:00.5", creatable: creatableH200},
 				}},
@@ -213,7 +213,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "MIG-backed vGPUs counted per type",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", current: 1414},
 					{address: "0000:18:00.5", current: 1414},
 					{address: "0000:18:00.6", creatable: creatableH200},
@@ -225,7 +225,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "Type ID not in creatable lists resolved via resolver",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", current: 1428},
 					{address: "0000:18:00.5"},
 				}},
@@ -237,7 +237,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "Type ID not resolvable anywhere returns error",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", current: 9999},
 				}},
 			},
@@ -247,7 +247,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "VF without vGPU sysfs interface returns error",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", noVGPUSysfs: true},
 				}},
 			},
@@ -257,7 +257,7 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "GPU index out of range returns error",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true},
+				{address: "0000:18:00.0", sriovCapable: true},
 			},
 			gpu:         1,
 			expectError: true,
@@ -265,11 +265,11 @@ func TestGetVGPUConfig(t *testing.T) {
 		{
 			description: "Second GPU has independent config",
 			gpus: []fakeGPU{
-				{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:18:00.4", current: 1428},
 					{address: "0000:18:00.5", creatable: creatableH200},
 				}},
-				{address: "0000:2a:00.0", sriovCapabe: true, vfs: []fakeVF{
+				{address: "0000:2a:00.0", sriovCapable: true, vfs: []fakeVF{
 					{address: "0000:2a:00.4", creatable: creatableH200},
 				}},
 			},
@@ -301,7 +301,7 @@ func TestGetVGPUConfig(t *testing.T) {
 func TestSetVGPUConfig(t *testing.T) {
 	t.Run("Whole-card type is created on the first VF that can create it", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", creatable: creatableH200},
 				{address: "0000:18:00.5", creatable: creatableH200},
 			}},
@@ -317,7 +317,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("MIG-backed types are created on multiple VFs", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", creatable: creatableH200},
 				{address: "0000:18:00.5", creatable: creatableH200},
 				{address: "0000:18:00.6", creatable: creatableH200},
@@ -335,7 +335,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Existing vGPU devices are cleared before new ones are created", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", current: 1428, creatable: creatableH200},
 				{address: "0000:18:00.5", creatable: creatableH200},
 			}},
@@ -351,7 +351,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Unsupported type fails before clearing existing devices", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", current: 1428, creatable: creatableH200},
 			}},
 		})
@@ -367,7 +367,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Attribute suffix is stripped when only the base type is creatable", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", creatable: "999 : NVIDIA DC-1-24Q\n"},
 			}},
 		})
@@ -381,7 +381,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Count exceeding creatable capacity returns error", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", creatable: creatableH200},
 				{address: "0000:18:00.5"},
 			}},
@@ -395,7 +395,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("SR-IOV VFs are enabled when none are present", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true},
+			{address: "0000:18:00.0", sriovCapable: true},
 		})
 
 		enableCalled := 0
@@ -414,7 +414,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Failure to enable SR-IOV VFs returns error", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true},
+			{address: "0000:18:00.0", sriovCapable: true},
 		})
 		m := newTestManager(t, root, WithSriovEnable(func(pfAddress string) error {
 			return fmt.Errorf("sriov-manage failed")
@@ -437,7 +437,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Empty config clears all vGPU devices", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", current: 1414, creatable: creatableH200},
 				{address: "0000:18:00.5", current: 1414, creatable: creatableH200},
 			}},
@@ -453,7 +453,7 @@ func TestSetVGPUConfig(t *testing.T) {
 
 	t.Run("Re-applying the same config is idempotent", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", creatable: creatableH200},
 				{address: "0000:18:00.5", creatable: creatableH200},
 				{address: "0000:18:00.6", creatable: creatableH200},
@@ -479,7 +479,7 @@ func TestSetVGPUConfig(t *testing.T) {
 func TestClearVGPUConfig(t *testing.T) {
 	t.Run("All configured VFs are cleared", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", current: 1414},
 				{address: "0000:18:00.5"},
 				{address: "0000:18:00.6", current: 1428},
@@ -496,7 +496,7 @@ func TestClearVGPUConfig(t *testing.T) {
 
 	t.Run("GPU with no VFs is a no-op", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true},
+			{address: "0000:18:00.0", sriovCapable: true},
 		})
 		m := newTestManager(t, root)
 
@@ -507,11 +507,11 @@ func TestClearVGPUConfig(t *testing.T) {
 func TestGPUEnumeration(t *testing.T) {
 	t.Run("VFs and non-GPU devices are excluded from GPU indices", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:18:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:18:00.4", current: 1428},
 				{address: "0000:18:00.5", creatable: creatableH200},
 			}},
-			{address: "0000:2a:00.0", sriovCapabe: true},
+			{address: "0000:2a:00.0", sriovCapable: true},
 		})
 
 		// Add a non-GPU NVIDIA device (e.g. an audio function) which must be
@@ -551,7 +551,7 @@ func TestMdevManagedVFs(t *testing.T) {
 	buildMdevSysfs := func(t *testing.T) string {
 		t.Helper()
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:41:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:41:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:41:00.4", noVGPUSysfs: true, mdevSupportedTypes: true},
 			}},
 		})
@@ -581,7 +581,7 @@ func TestMdevManagedVFs(t *testing.T) {
 
 	t.Run("VF without any vGPU interface still blames the driver", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
-			{address: "0000:41:00.0", sriovCapabe: true, vfs: []fakeVF{
+			{address: "0000:41:00.0", sriovCapable: true, vfs: []fakeVF{
 				{address: "0000:41:00.4", noVGPUSysfs: true},
 			}},
 		})
@@ -628,7 +628,7 @@ func TestHasVGPUCapableDevices(t *testing.T) {
 	}{
 		{
 			"NVIDIA GPU with SR-IOV bound to nvidia",
-			[]fakeGPU{{address: "0000:18:00.0", sriovCapabe: true}},
+			[]fakeGPU{{address: "0000:18:00.0", sriovCapable: true}},
 			true,
 		},
 		{
@@ -638,7 +638,7 @@ func TestHasVGPUCapableDevices(t *testing.T) {
 		},
 		{
 			"NVIDIA GPU with SR-IOV bound to vfio-pci",
-			[]fakeGPU{{address: "0000:18:00.0", driver: "vfio-pci", sriovCapabe: true}},
+			[]fakeGPU{{address: "0000:18:00.0", driver: "vfio-pci", sriovCapable: true}},
 			false,
 		},
 		{
