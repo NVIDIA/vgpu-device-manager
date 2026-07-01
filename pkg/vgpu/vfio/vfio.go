@@ -48,6 +48,7 @@ type Manager interface {
 	GetVGPUConfig(gpu int) (types.VGPUConfig, error)
 	SetVGPUConfig(gpu int, config types.VGPUConfig) error
 	ClearVGPUConfig(gpu int) error
+	NormalizeVGPUConfig(gpu int, config types.VGPUConfig) (types.VGPUConfig, error)
 }
 
 // TypeResolver resolves the full set of vGPU types supported by a GPU to a
@@ -210,18 +211,9 @@ func (m *manager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
 	// (ME, NOME, MEALL, GFX) is stripped from the type name if the type is
 	// only supported without it.
 	registry := m.newTypeRegistry(pf, vfs)
-	type request struct {
-		name  string
-		id    int
-		count int
-	}
-	var requests []request
-	for key, val := range config {
-		id, name, err := registry.idForName(key)
-		if err != nil {
-			return fmt.Errorf("vGPU type %s is not supported on GPU (index=%d, address=%s): %v", key, gpu, pf.address, err)
-		}
-		requests = append(requests, request{name: name, id: id, count: val})
+	requests, err := resolveVGPUConfig(registry, config)
+	if err != nil {
+		return fmt.Errorf("%v on GPU (index=%d, address=%s)", err, gpu, pf.address)
 	}
 
 	err = m.ClearVGPUConfig(gpu)
@@ -270,6 +262,37 @@ func (m *manager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
 	}
 
 	return nil
+}
+
+// NormalizeVGPUConfig returns the config as it would be realized on the GPU
+// at a particular index, mapping vGPU types that are only supported without
+// their MIG attribute suffix to the supported name.
+func (m *manager) NormalizeVGPUConfig(gpu int, config types.VGPUConfig) (types.VGPUConfig, error) {
+	if len(config) == 0 {
+		return config, nil
+	}
+
+	pf, err := m.gpuByIndex(gpu)
+	if err != nil {
+		return nil, fmt.Errorf("error getting device at index '%d': %v", gpu, err)
+	}
+
+	vfs, err := pf.virtualFunctions()
+	if err != nil {
+		return nil, fmt.Errorf("error enumerating virtual functions for GPU %s: %v", pf.address, err)
+	}
+
+	registry := m.newTypeRegistry(pf, vfs)
+	resolved, err := resolveVGPUConfig(registry, config)
+	if err != nil {
+		return nil, fmt.Errorf("%v on GPU (index=%d, address=%s)", err, gpu, pf.address)
+	}
+
+	normalized := types.VGPUConfig{}
+	for _, r := range resolved {
+		normalized[r.name] = r.count
+	}
+	return normalized, nil
 }
 
 // ClearVGPUConfig clears the 'VGPUConfig' for a GPU at a particular index by
@@ -466,6 +489,9 @@ func (r *typeRegistry) nameForID(id int) (string, error) {
 // idForName returns the numeric type ID for a short vGPU type name, along
 // with the name that was actually matched: if the name is only supported
 // without its MIG attribute suffix, the stripped name is matched instead.
+// The exact name is exhausted against all sources before the stripped name
+// is considered, so a supported suffixed type is never silently substituted
+// with its base type.
 func (r *typeRegistry) idForName(name string) (int, string, error) {
 	candidates := []string{name}
 	if stripped := types.StripAttributeSuffix(name); stripped != name {
@@ -476,9 +502,7 @@ func (r *typeRegistry) idForName(name string) (int, string, error) {
 		if id, ok := r.shortToID[candidate]; ok {
 			return id, candidate, nil
 		}
-	}
-	r.fillFromResolver()
-	for _, candidate := range candidates {
+		r.fillFromResolver()
 		if id, ok := r.shortToID[candidate]; ok {
 			return id, candidate, nil
 		}
@@ -488,6 +512,34 @@ func (r *typeRegistry) idForName(name string) (int, string, error) {
 		return 0, "", fmt.Errorf("vGPU type not found in sysfs, and the type resolver failed: %v", r.resolverErr)
 	}
 	return 0, "", fmt.Errorf("unknown vGPU type")
+}
+
+// resolvedType is a vGPU config entry resolved against a typeRegistry.
+type resolvedType struct {
+	name  string
+	id    int
+	count int
+}
+
+// resolveVGPUConfig resolves every vGPU type in the config to its numeric
+// type ID and matched name. Two config entries mapping to the same supported
+// type are rejected: the counts of such entries have no well-defined
+// combined meaning.
+func resolveVGPUConfig(registry *typeRegistry, config types.VGPUConfig) ([]resolvedType, error) {
+	matchedBy := make(map[string]string)
+	var resolved []resolvedType
+	for key, val := range config {
+		id, name, err := registry.idForName(key)
+		if err != nil {
+			return nil, fmt.Errorf("vGPU type %s is not supported: %v", key, err)
+		}
+		if previous, exists := matchedBy[name]; exists {
+			return nil, fmt.Errorf("vGPU types %s and %s map to the same supported vGPU type %s", previous, key, name)
+		}
+		matchedBy[name] = key
+		resolved = append(resolved, resolvedType{name: name, id: id, count: val})
+	}
+	return resolved, nil
 }
 
 func containsTypeID(vgpuTypes []vgpuType, id int) bool {
