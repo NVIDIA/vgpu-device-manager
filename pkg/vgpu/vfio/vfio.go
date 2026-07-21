@@ -224,7 +224,10 @@ func (m *manager) SetVGPUConfig(gpu int, config types.VGPUConfig) error {
 	for _, req := range requests {
 		remainingToCreate := req.count
 		for _, vf := range vfs {
-			if remainingToCreate == 0 {
+			// A non-positive count must stop before any VF is touched: a
+			// negative count would otherwise never reach zero and fill every
+			// free VF with the requested type.
+			if remainingToCreate <= 0 {
 				break
 			}
 
