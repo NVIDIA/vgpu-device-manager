@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -793,6 +794,26 @@ func TestSriovManageEnableValidation(t *testing.T) {
 		require.Error(t, err, "address %q must be rejected", address)
 		require.Contains(t, err.Error(), "invalid PCI address")
 	}
+}
+
+func TestRunSriovManage(t *testing.T) {
+	t.Run("Captured stderr is included in the returned error", func(t *testing.T) {
+		err := runSriovManage(sriovManageTimeout, []string{"sh", "-c", "echo diagnostic-detail >&2; exit 1"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error running sriov-manage")
+		require.Contains(t, err.Error(), "diagnostic-detail")
+	})
+
+	t.Run("A command that overruns the timeout is aborted", func(t *testing.T) {
+		err := runSriovManage(100*time.Millisecond, []string{"sh", "-c", "sleep 5"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "timed out")
+	})
+
+	t.Run("A successful command returns no error", func(t *testing.T) {
+		err := runSriovManage(sriovManageTimeout, []string{"sh", "-c", "exit 0"})
+		require.NoError(t, err)
+	})
 }
 
 func TestHasVGPUCapableDevices(t *testing.T) {
