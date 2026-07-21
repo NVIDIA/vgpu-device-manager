@@ -393,6 +393,25 @@ func TestSetVGPUConfig(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to create")
 	})
 
+	t.Run("Negative count fills no free VFs", func(t *testing.T) {
+		// A negative count is unreachable through a validated config but the
+		// package is exported: guard it so the request creates no vGPU devices
+		// instead of filling every free VF with the requested type.
+		root := buildFakeSysfs(t, []fakeGPU{
+			{address: "0000:18:00.0", sriovCapable: true, vfs: []fakeVF{
+				{address: "0000:18:00.4", creatable: creatableH200},
+				{address: "0000:18:00.5", creatable: creatableH200},
+			}},
+		})
+		m := newTestManager(t, root)
+
+		err := m.SetVGPUConfig(0, types.VGPUConfig{"H200X-141C": -1})
+		require.NoError(t, err)
+
+		require.Equal(t, "0", readCurrentVGPUType(t, root, "0000:18:00.4"))
+		require.Equal(t, "0", readCurrentVGPUType(t, root, "0000:18:00.5"))
+	})
+
 	t.Run("SR-IOV VFs are enabled when none are present", func(t *testing.T) {
 		root := buildFakeSysfs(t, []fakeGPU{
 			{address: "0000:18:00.0", sriovCapable: true},
