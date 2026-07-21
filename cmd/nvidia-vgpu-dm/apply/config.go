@@ -27,14 +27,25 @@ import (
 
 // VGPUConfig applies the selected vGPU config to the node
 func VGPUConfig(c *Context) error {
+	configManager := vgpu.NewVGPUConfigManager(c.Flags.HostRootMount)
 	return assert.WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
-		configManager := vgpu.NewNvlibVGPUConfigManager()
 		current, err := configManager.GetVGPUConfig(i)
 		if err != nil {
 			return fmt.Errorf("error getting vGPU config: %v", err)
 		}
 
-		if current.Equals(vc.VGPUDevices) {
+		// GetVGPUConfig reports vGPU type names as the driver knows them,
+		// which may differ from the names in the config file by a MIG
+		// attribute suffix. Compare against the normalized config so that a
+		// config that is already applied is not torn down and recreated.
+		desired := vc.VGPUDevices
+		if normalized, err := configManager.NormalizeVGPUConfig(i, desired); err == nil {
+			desired = normalized
+		} else {
+			log.Debugf("    Unable to normalize the desired vGPU config, comparing as-is: %v", err)
+		}
+
+		if current.Equals(desired) {
 			log.Debugf("    Skipping -- already set to desired value")
 			return nil
 		}

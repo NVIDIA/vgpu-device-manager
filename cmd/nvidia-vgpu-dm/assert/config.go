@@ -35,15 +35,25 @@ func VGPUConfig(c *Context) error {
 	}
 
 	matched := make([]bool, len(gpus))
+	configManager := vgpu.NewVGPUConfigManager("")
 	err = WalkSelectedVGPUConfigForEachGPU(c.VGPUConfig, func(vc *v1.VGPUConfigSpec, i int, d types.DeviceID) error {
-		configManager := vgpu.NewNvlibVGPUConfigManager()
 		current, err := configManager.GetVGPUConfig(i)
 		if err != nil {
 			return fmt.Errorf("error getting vGPU config: %v", err)
 		}
 
-		log.Debugf("    Asserting vGPU config: %v", vc.VGPUDevices)
-		if current.Equals(vc.VGPUDevices) {
+		// GetVGPUConfig reports vGPU type names as the driver knows them,
+		// which may differ from the names in the config file by a MIG
+		// attribute suffix. Compare against the normalized config.
+		desired := vc.VGPUDevices
+		if normalized, err := configManager.NormalizeVGPUConfig(i, desired); err == nil {
+			desired = normalized
+		} else {
+			log.Debugf("    Unable to normalize the desired vGPU config, comparing as-is: %v", err)
+		}
+
+		log.Debugf("    Asserting vGPU config: %v", desired)
+		if current.Equals(desired) {
 			log.Debugf("    Skipping -- already set to desired value")
 			matched[i] = true
 			return nil
