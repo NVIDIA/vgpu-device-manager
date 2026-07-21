@@ -27,10 +27,15 @@
 package vfio
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/NVIDIA/vgpu-device-manager/pkg/types"
 )
@@ -394,6 +399,12 @@ func sriovManageArgs(hostRootMount, pfAddress string) []string {
 	return []string{DefaultSriovManagePath, "-e", pfAddress}
 }
 
+// sriovManageTimeout bounds how long the sriov-manage script may run when
+// enabling SR-IOV virtual functions before it is aborted. Enabling the
+// virtual functions of a single GPU completes well within this budget; the
+// bound only exists so a hung invocation cannot block indefinitely.
+const sriovManageTimeout = 60 * time.Second
+
 // sriovManageEnable returns a function that enables SR-IOV virtual functions
 // on a GPU by running the sriov-manage script.
 func sriovManageEnable(hostRootMount string) func(pfAddress string) error {
@@ -401,16 +412,36 @@ func sriovManageEnable(hostRootMount string) func(pfAddress string) error {
 		if !pciAddressPattern.MatchString(pfAddress) {
 			return fmt.Errorf("invalid PCI address '%s'", pfAddress)
 		}
+		return runSriovManage(sriovManageTimeout, sriovManageArgs(hostRootMount, pfAddress))
+	}
+}
 
-		args := sriovManageArgs(hostRootMount, pfAddress)
-		cmd := exec.Command(args[0], args[1:]...) // #nosec G204 -- hostRootMount comes from a CLI flag, pfAddress is validated against a PCI address pattern.
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("error running sriov-manage: %v", err)
-		}
+// runSriovManage runs the sriov-manage command, streaming its output while
+// also capturing stderr so it can be reported on failure. The command is
+// aborted if it does not complete within the timeout.
+func runSriovManage(timeout time.Duration, args []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec G204 -- hostRootMount comes from a CLI flag, pfAddress is validated against a PCI address pattern.
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+
+	err := cmd.Run()
+	if err == nil {
 		return nil
 	}
+
+	if ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("sriov-manage timed out after %s: %v", timeout, err)
+	} else {
+		err = fmt.Errorf("error running sriov-manage: %v", err)
+	}
+	if detail := strings.TrimSpace(stderr.String()); detail != "" {
+		err = fmt.Errorf("%v: %s", err, detail)
+	}
+	return err
 }
 
 // typeRegistry maps between numeric vGPU type IDs and vGPU type names for a
