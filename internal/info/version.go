@@ -25,7 +25,7 @@ var version = "unknown"
 // and will be populated by the Makefile
 var gitCommit = ""
 
-// GetVersionParts returns the different version components
+// GetVersionParts returns a string slice containing the version string and, if available, the git commit hash. The slice is intended for constructing version-related information.
 func GetVersionParts() []string {
 	v := []string{version}
 
