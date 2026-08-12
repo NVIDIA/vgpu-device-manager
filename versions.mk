@@ -18,4 +18,6 @@ vVERSION := v$(VERSION:v%=%)
 
 GOLANG_VERSION := $(shell ./hack/golang-version.sh)
 
+GO_LICENSES_VERSION := v2.0.1
+
 GIT_COMMIT ?= $(shell git describe --match="" --dirty --long --always --abbrev=40 2> /dev/null || echo "")
