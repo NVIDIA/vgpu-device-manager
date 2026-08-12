@@ -25,7 +25,7 @@ CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
 CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
 
 CHECK_TARGETS := assert-fmt vet lint ineffassign misspell
-MAKE_TARGETS := binaries build check fmt lint-internal test examples cmds coverage generate $(CHECK_TARGETS) $(CMD_TARGETS)
+MAKE_TARGETS := binaries build check fmt lint-internal test examples cmds coverage generate third-party-notices check-third-party-notices $(CHECK_TARGETS) $(CMD_TARGETS)
 
 TARGETS := $(MAKE_TARGETS)
 
@@ -74,6 +74,21 @@ test: build
 coverage: test
 	cat $(COVERAGE_FILE) | grep -v "_mock.go" > $(COVERAGE_FILE).no-mocks
 	go tool cover -func=$(COVERAGE_FILE).no-mocks
+
+GO_LICENSES = $(CURDIR)/bin/go-licenses
+
+$(GO_LICENSES): versions.mk
+	GOBIN=$(CURDIR)/bin GOFLAGS=-mod=mod go install github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION)
+
+third-party-notices: $(GO_LICENSES)
+	@bash hack/generate-third-party-notices.sh
+
+check-third-party-notices: third-party-notices
+	@echo "- Checking if THIRD_PARTY_NOTICES.md is up to date..."
+	@git ls-files --error-unmatch THIRD_PARTY_NOTICES.md >/dev/null 2>&1 \
+		|| { echo "ERROR: THIRD_PARTY_NOTICES.md is not tracked. Run 'make third-party-notices' and commit the result."; exit 1; }
+	@git diff --exit-code -- THIRD_PARTY_NOTICES.md \
+		|| { echo "ERROR: THIRD_PARTY_NOTICES.md is stale. Run 'make third-party-notices' and commit the change."; exit 1; }
 
 # Generate an image for containerized builds
 # Note: This image is local only
