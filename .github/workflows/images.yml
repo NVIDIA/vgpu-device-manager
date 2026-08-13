@@ -75,7 +75,8 @@ jobs:
       - name: Build image
         env:
           IMAGE_NAME: ghcr.io/${LOWERCASE_REPO_OWNER}/vgpu-device-manager
-          VERSION: ${COMMIT_SHORT_SHA}-${{ matrix.arch }}
+          VERSION: ${COMMIT_SHORT_SHA}
+          IMAGE_TAG: ${COMMIT_SHORT_SHA}-${{ matrix.arch }}
           GOPROXY: ${{ steps.setup-go-proxy.outputs.goproxy-url }}
           DOCKER_BUILD_PLATFORM_OPTIONS: "--platform=linux/${{ matrix.arch }}"
         run: |

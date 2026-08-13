@@ -14,8 +14,6 @@
 
 VERSION ?= v0.4.2
 
-vVERSION := v$(VERSION:v%=%)
-
 GOLANG_VERSION := $(shell ./hack/golang-version.sh)
 
 GO_LICENSES_VERSION := v2.0.1
