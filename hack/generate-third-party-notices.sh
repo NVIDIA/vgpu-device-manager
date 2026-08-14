@@ -184,7 +184,7 @@ collapse_index() {
     '
 }
 
-# Rows carry module@version, not a URL: in vendor mode go-licenses points into
+# Rows carry module paths, not a URL: in vendor mode go-licenses points into
 # this repo at HEAD, which stops describing released content once main moves.
 # Longest-prefix match, because a license may sit below the module root.
 annotate_modules() {
@@ -196,7 +196,7 @@ annotate_modules() {
                 split(line, f, " ")
                 # "# <path> <version>", optionally "=> <path> <version>". The
                 # replacement is what is vendored; a filesystem replace has no
-                # version, so stop rather than misstate it.
+                # stable module identity, so stop rather than misattribute it.
                 if (f[4] == "=>" || f[3] == "=>") {
                     r = (f[4] == "=>") ? 5 : 4
                     if (f[r + 1] == "") {
@@ -205,10 +205,10 @@ annotate_modules() {
                         exit 1
                     }
                     mods[++m] = f[2]
-                    disp[f[2]] = f[r] "@" f[r + 1]
+                    disp[f[2]] = f[r]
                 } else {
                     mods[++m] = f[2]
-                    disp[f[2]] = f[2] "@" f[3]
+                    disp[f[2]] = f[2]
                 }
             }
             close(modfile)
@@ -245,7 +245,7 @@ build_indexes() {
     fi
 
     if cut -d, -f4 "${INDEX_FILE}" | LC_ALL=C grep -qx 'unknown'; then
-        die "could not resolve module@version for some packages from ${MODULES_TXT}." \
+        die "could not resolve a dependency for some packages from ${MODULES_TXT}." \
             "Run 'go mod tidy && go mod vendor' and re-run, rather than committing a file" \
             "with unattributed entries."
     fi
@@ -266,8 +266,8 @@ license_files_for() {
 
 emit_index_table() {
     local index="$1" pkg _url license module
-    printf '| Package | License | Module |\n'
-    printf '|---------|---------|--------|\n'
+    printf '| Package | License | Dependency |\n'
+    printf '|---------|---------|------------|\n'
 
     while IFS=, read -r pkg _url license module; do
         [[ -z "${pkg}" ]] && continue
