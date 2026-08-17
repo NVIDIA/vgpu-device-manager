@@ -101,6 +101,23 @@ $ echo $?
 1
 ```
 
+## Supported vGPU frameworks
+
+The NVIDIA vGPU Manager driver exposes vGPU devices through one of two frameworks, depending on the GPU architecture:
+
+- **Mediated devices (mdev)**: used on GPUs up to and including the Ampere architecture. vGPU devices are created through `/sys/class/mdev_bus`.
+- **Vendor-specific VFIO**: used by vGPU 17.0+ on the Ada, Hopper and newer architectures (e.g. L40S, H100, H200). There is no mdev bus on these systems. Each GPU is an SR-IOV physical function bound to the `nvidia` driver, and vGPU devices are created on its virtual functions by writing a vGPU type ID to the per-VF `nvidia/current_vgpu_type` sysfs file. See the [NVIDIA vGPU documentation](https://docs.nvidia.com/vgpu/latest/grid-vgpu-user-guide/index.html) for details.
+
+`nvidia-vgpu-dm` detects the framework automatically and uses the same configuration file format and CLI semantics for both. The detection is node-wide: a single framework is selected for all GPUs on the node, so nodes mixing GPUs from both framework generations are not supported.
+
+On systems using the vendor-specific VFIO framework:
+
+- SR-IOV virtual functions are enabled automatically (via the `sriov-manage` script shipped with the vGPU Manager driver) if they are not enabled already. This requires the vGPU Manager driver to be installed on the host root filesystem; with a containerized driver the virtual functions are expected to be enabled by the driver container itself. When `nvidia-vgpu-dm apply` runs inside a container, pass `--host-root-mount` (environment variable `VGPU_DM_HOST_ROOT_MOUNT`) so that `sriov-manage` is run from the host driver installation through chroot.
+- MIG-backed vGPU types require MIG mode to be enabled and GPU instances to be created before the vGPU devices can be created. The Kubernetes deployment handles this automatically; standalone CLI users must configure MIG first (e.g. with [mig-parted](https://github.com/NVIDIA/mig-parted)).
+- NVML (`libnvidia-ml.so.1`) is used to resolve the vGPU type names of already-created vGPU devices, since the sysfs `creatable_vgpu_types` files only list types that can still be created. When deploying in Kubernetes, use a deployment that mounts the driver installation and sets `LD_PRELOAD` (see `examples/nvidia-vgpu-device-manager-mig-support-example.yaml`).
+- MIG mode persists across reboots, but MIG instances, SR-IOV virtual functions and vGPU devices do not; they are re-created on every boot, which is exactly what the Kubernetes deployment does when it applies the selected configuration at node startup.
+- Applying a configuration at boot (before VMs are started) is the reliable path. Live re-configuration after MIG changes is best-effort: on some driver versions the `creatable_vgpu_types` enumeration has been observed to come up empty after MIG instances are re-created without a reboot (restarting the host `nvidia-vgpud` service may help).
+
 ## Build `nvidia-vgpu-dm`
 
 ```
