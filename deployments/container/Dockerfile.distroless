@@ -51,13 +51,27 @@ COPY --from=build /artifacts/nvidia-vgpu-dm /usr/bin/nvidia-vgpu-dm
 COPY --from=build /artifacts/nvidia-k8s-vgpu-dm /usr/bin/nvidia-k8s-vgpu-dm
 COPY --from=mig-manager /usr/bin/nvidia-mig-parted /usr/bin/nvidia-mig-parted
 
+ARG VERSION
+ARG GIT_COMMIT
+ARG BUILD_TIMESTAMP
+
 LABEL version="${VERSION}"
 LABEL release="N/A"
 LABEL vendor="NVIDIA"
 LABEL io.k8s.display-name="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL name="NVIDIA vGPU Device Manager for Kubernetes"
 LABEL summary="NVIDIA vGPU Device Manager for Kubernetes"
-LABEL description="See summary"
+LABEL description="Automates vGPU configuration of NVIDIA GPUs"
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/go"
+LABEL org.opencontainers.image.created="${BUILD_TIMESTAMP}"
+LABEL org.opencontainers.image.description="Automates vGPU configuration of NVIDIA GPUs"
+LABEL org.opencontainers.image.documentation="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator"
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
+LABEL org.opencontainers.image.source="https://github.com/NVIDIA/vgpu-device-manager.git"
+LABEL org.opencontainers.image.title="NVIDIA vGPU Device Manager for Kubernetes"
+LABEL org.opencontainers.image.url="https://catalog.ngc.nvidia.com/orgs/nvidia/cloud-native/containers/vgpu-device-manager"
+LABEL org.opencontainers.image.vendor="NVIDIA"
+LABEL org.opencontainers.image.version="${VERSION}"
 
 USER 0:0
 ENTRYPOINT ["nvidia-k8s-vgpu-dm"]
