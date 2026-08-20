@@ -32,3 +32,6 @@ updates:
     - "/deployments/devel"
     schedule:
       interval: "daily"
+    cooldown:
+      exclude:
+      - nvidia/*
