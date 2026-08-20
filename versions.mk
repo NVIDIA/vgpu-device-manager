@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VERSION ?= v0.4.2
+VERSION ?= v0.5.0
 
 GOLANG_VERSION := $(shell ./hack/golang-version.sh)
 
