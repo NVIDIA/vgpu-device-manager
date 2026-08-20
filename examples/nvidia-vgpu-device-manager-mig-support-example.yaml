@@ -19,7 +19,7 @@ spec:
       serviceAccountName: vgpu-device-manager
       containers:
       - name: vgpu-device-manager
-        image: nvcr.io/nvidia/cloud-native/vgpu-device-manager:v0.4.1
+        image: nvcr.io/nvidia/cloud-native/vgpu-device-manager:v0.5.0
         imagePullPolicy: IfNotPresent
         env:
         - name: NAMESPACE
