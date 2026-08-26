@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -123,4 +124,16 @@ func parseRegex(re, s string) map[string]string {
 	}
 
 	return captureGroups
+}
+
+func (v VGPUType) String() string {
+	if v.G == 0 {
+		return fmt.Sprintf("%s-%d%c", v.GPU, v.GB, v.S)
+	}
+
+	var suffix string
+	if len(v.Attr) > 0 {
+		suffix = strings.Join(v.Attr, "")
+	}
+	return fmt.Sprintf("%s-%d-%d%c%s", v.GPU, v.G, v.GB, v.S, suffix)
 }
