@@ -187,3 +187,8 @@ kubectl apply -f https://raw.githubusercontent.com/NVIDIA/vgpu-device-manager/ma
 ```
 
 The example DaemonSet will apply the `default` vGPU configuration by default. To override and pick a new configuration, label the worker node `nvidia.com/vgpu.config=<config>`, where `<config>` is the name of a valid configuration in `config.yaml`. The vGPU Device Manager continuously watches for changes to this label.
+
+## Contributions
+[Read the document on contributions](CONTRIBUTING.md). 
+You can contribute by opening a [pull request](https://help.github.com/en/articles/about-pull-requests).
+Contributions must adhere to the [Code of Conduct](CODE_OF_CONDUCT.md).
