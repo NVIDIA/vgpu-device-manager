@@ -358,7 +358,7 @@ func start(c *cli.Context) error {
 		}
 		vGPUConfigStateValue := getVGPUConfigStateValue(err)
 		log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
-		_ = setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
+		_ = setNodeLabelValueForNode(c.Context, clientset, nodeNameFlag, vGPUConfigStateLabel, vGPUConfigStateValue)
 		if c.Err() != nil {
 			return c.Err()
 		}
@@ -642,10 +642,6 @@ func getNodeLabelValueForNode(
 	}
 
 	return value, nil
-}
-
-func setNodeLabelValue(clientset kubernetes.Interface, label, value string) error {
-	return setNodeLabelValueForNode(context.TODO(), clientset, nodeNameFlag, label, value)
 }
 
 func setNodeLabelValueForNode(
