@@ -37,6 +37,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 
 	migpartedv1 "github.com/NVIDIA/mig-parted/api/spec/v1"
 
@@ -73,14 +74,68 @@ var (
 	gpuClientsFileFlag             string
 	withRebootFlag                 bool
 	withShutdownHostGPUClientsFlag bool
-
-	pluginDeployed    string
-	validatorDeployed string
 )
 
 type GPUClients struct {
 	Version         string   `json:"version"          yaml:"version"`
 	SystemdServices []string `json:"systemd-services" yaml:"systemd-services"`
+}
+
+type configOperations interface {
+	assertValid(string) error
+	assertApplied(string) error
+	apply(string) error
+	configureMIG(string) error
+	waitForOperandShutdown(context.Context, string) error
+}
+
+type defaultConfigOperations struct {
+	clientset kubernetes.Interface
+	nodeName  string
+	namespace string
+}
+
+func (o *defaultConfigOperations) assertValid(config string) error {
+	return assertValidConfig(config)
+}
+
+func (o *defaultConfigOperations) assertApplied(config string) error {
+	return assertConfig(config)
+}
+
+func (o *defaultConfigOperations) apply(config string) error {
+	return applyConfig(config)
+}
+
+func (o *defaultConfigOperations) configureMIG(config string) error {
+	return handleMIGConfiguration(o.clientset, config)
+}
+
+func (o *defaultConfigOperations) waitForOperandShutdown(ctx context.Context, labelSelector string) error {
+	return waitForPodDeletion(ctx, o.clientset, o.namespace, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", o.nodeName),
+		LabelSelector: labelSelector,
+	})
+}
+
+type configReconciler struct {
+	clientset         kubernetes.Interface
+	operations        configOperations
+	defaultVGPUConfig string
+	nodeName          string
+}
+
+func newConfigReconciler(clientset kubernetes.Interface) *configReconciler {
+	return &configReconciler{
+		clientset: clientset,
+		operations: &defaultConfigOperations{
+			clientset: clientset,
+			nodeName:  nodeNameFlag,
+			namespace: namespaceFlag,
+		},
+		defaultVGPUConfig: defaultVGPUConfigFlag,
+		nodeName:          nodeNameFlag,
+	}
 }
 
 // SyncableVGPUConfig is used to synchronize on changes to a configuration value.
@@ -267,6 +322,7 @@ func start(c *cli.Context) error {
 	}
 
 	vGPUConfig := NewSyncableVGPUConfig()
+	reconciler := newConfigReconciler(clientset)
 
 	stop := continuouslySyncVGPUConfigChanges(clientset, vGPUConfig)
 	defer close(stop)
@@ -285,32 +341,78 @@ func start(c *cli.Context) error {
 		selectedConfig = vGPUConfig.Get()
 	}
 
-	log.Infof("Updating to vGPU config: %s", selectedConfig)
-	err = updateConfig(clientset, selectedConfig)
-	if err != nil {
-		log.Errorf("Failed to apply vGPU config: %v", err)
-	} else {
-		log.Infof("Successfully updated to vGPU config: %s", selectedConfig)
+	retryBackoff := wait.Backoff{
+		Duration: 2 * time.Second,
+		Factor:   2,
+		Jitter:   0.1,
+		Steps:    4,
+		Cap:      15 * time.Second,
 	}
-	vGPUConfigStateValue := getVGPUConfigStateValue(err)
-	log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
-	_ = setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
-
-	// Watch for configuration changes
 	for {
-		log.Infof("Waiting for change to '%s' label", vGPUConfigLabel)
-		value := vGPUConfig.Get()
-		log.Infof("Updating to vGPU config: %s", value)
-		err = updateConfig(clientset, value)
+		log.Infof("Updating to vGPU config: %s", selectedConfig)
+		selectedConfig, err = updateConfigWithRetry(c.Context, reconciler, selectedConfig, retryBackoff)
 		if err != nil {
 			log.Errorf("Failed to apply vGPU config: %v", err)
 		} else {
-			log.Infof("Successfully updated to vGPU config: %s", value)
+			log.Infof("Successfully updated to vGPU config: %s", selectedConfig)
 		}
-		vGPUConfigStateValue = getVGPUConfigStateValue(err)
+		vGPUConfigStateValue := getVGPUConfigStateValue(err)
 		log.Infof("Setting node label: %s=%s", vGPUConfigStateLabel, vGPUConfigStateValue)
 		_ = setNodeLabelValue(clientset, vGPUConfigStateLabel, vGPUConfigStateValue)
+		if c.Err() != nil {
+			return c.Err()
+		}
+		if isRetryableConfigError(err) {
+			log.Error("Retryable vGPU configuration error persisted after bounded retries")
+			return err
+		}
+
+		log.Infof("Waiting for change to '%s' label", vGPUConfigLabel)
+		selectedConfig = vGPUConfig.Get()
 	}
+}
+
+func updateConfigWithRetry(
+	ctx context.Context,
+	reconciler *configReconciler,
+	selectedConfig string,
+	backoff wait.Backoff,
+) (string, error) {
+	var lastErr error
+	attempt := 0
+
+	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		attempt++
+		if attempt > 1 {
+			currentConfig, err := getNodeLabelValueForNode(ctx, reconciler.clientset, reconciler.nodeName, vGPUConfigLabel)
+			if err != nil {
+				lastErr = newRetryableConfigError(fmt.Errorf("unable to re-read vGPU config before retry: %w", err))
+				return false, nil
+			}
+			if currentConfig == "" {
+				currentConfig = reconciler.defaultVGPUConfig
+			}
+			selectedConfig = currentConfig
+			log.Infof("Retrying with current desired vGPU config: %s", selectedConfig)
+		}
+
+		lastErr = reconciler.updateConfig(ctx, selectedConfig)
+		if lastErr == nil || !isRetryableConfigError(lastErr) {
+			return true, nil
+		}
+
+		log.Warnf("Retryable vGPU configuration error on attempt %d of %d: %v", attempt, backoff.Steps, lastErr)
+		return false, nil
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return selectedConfig, ctx.Err()
+		}
+		if !wait.Interrupted(err) {
+			return selectedConfig, err
+		}
+	}
+	return selectedConfig, lastErr
 }
 
 func continuouslySyncVGPUConfigChanges(clientset *kubernetes.Clientset, vGPUConfig *SyncableVGPUConfig) chan struct{} {
@@ -344,51 +446,71 @@ func continuouslySyncVGPUConfigChanges(clientset *kubernetes.Clientset, vGPUConf
 	return stop
 }
 
-func updateConfig(clientset *kubernetes.Clientset, selectedConfig string) error {
-
+func (r *configReconciler) updateConfig(ctx context.Context, selectedConfig string) (returnErr error) {
 	log.Info("Asserting that the requested configuration is present in the configuration file")
-	err := assertValidConfig(selectedConfig)
+	err := r.operations.assertValid(selectedConfig)
 	if err != nil {
 		return fmt.Errorf("unable to validate the selected vGPU configuration")
 	}
 
 	log.Info("Checking if the selected vGPU device configuration is currently applied or not")
-	err = assertConfig(selectedConfig)
+	err = r.operations.assertApplied(selectedConfig)
 	if err == nil {
+		log.Info("Restoring any GPU operands left paused by an interrupted vGPU configuration change")
+		if err := restoreGPUOperandLabels(ctx, r.clientset, r.nodeName, true, true); err != nil {
+			return newRetryableConfigError(fmt.Errorf("unable to recover paused GPU operands: %w", err))
+		}
 		return nil
 	}
 
-	err = getNodeStateLabels(clientset)
-	if err != nil {
-		return fmt.Errorf("unable to get node state labels: %v", err)
-	}
-
 	log.Infof("Setting node label: %s=pending", vGPUConfigStateLabel)
-	err = setNodeLabelValue(clientset, vGPUConfigStateLabel, "pending")
+	err = setNodeLabelValueForNode(ctx, r.clientset, r.nodeName, vGPUConfigStateLabel, "pending")
 	if err != nil {
-		return fmt.Errorf("error setting vGPU config state label: %v", err)
+		return newRetryableConfigError(fmt.Errorf("error setting vGPU config state label: %w", err))
 	}
 
 	log.Info("Shutting down all GPU operands in Kubernetes by disabling their component-specific nodeSelector labels")
-	err = shutdownGPUOperands(clientset)
+	_, err = r.shutdownGPUOperands(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to shutdown gpu operands: %v", err)
+		return fmt.Errorf("unable to shutdown GPU operands: %w", err)
 	}
 	defer func() {
-		log.Info("Restarting all GPU operands previously shutdown in Kubernetes by enabling their component-specific nodeSelector labels")
-		if err := rescheduleGPUOperands(clientset); err != nil {
-			log.Errorf("Unable to reschedule gpu operands: %v", err)
+		log.Info("Restarting GPU operands paused for the vGPU configuration change")
+		if err := restoreGPUOperandLabels(ctx, r.clientset, r.nodeName, true, true); err != nil {
+			restoreErr := fmt.Errorf("unable to restore GPU operands: %w", err)
+			if returnErr != nil {
+				restoreErr = fmt.Errorf("%w; %w", returnErr, restoreErr)
+			}
+			returnErr = newRetryableConfigError(restoreErr)
 		}
 	}()
 
-	if err := handleMIGConfiguration(clientset, selectedConfig); err != nil {
-		return fmt.Errorf("unable to handle MIG configuration: %v", err)
+	if err := r.operations.configureMIG(selectedConfig); err != nil {
+		return fmt.Errorf("unable to handle MIG configuration: %w", err)
 	}
 
 	log.Info("Applying the selected vGPU device configuration to the node")
-	err = applyConfig(selectedConfig)
+	err = r.operations.apply(selectedConfig)
 	if err != nil {
-		return fmt.Errorf("unable to apply config '%s': %v", selectedConfig, err)
+		return fmt.Errorf("unable to apply config %q: %w", selectedConfig, err)
+	}
+
+	log.Info("Verifying that the selected vGPU device configuration was applied")
+	if err := r.operations.assertApplied(selectedConfig); err != nil {
+		return fmt.Errorf("applied vGPU configuration %q does not match the requested configuration: %w", selectedConfig, err)
+	}
+
+	currentConfig, err := getNodeLabelValueForNode(ctx, r.clientset, r.nodeName, vGPUConfigLabel)
+	if err != nil {
+		return newRetryableConfigError(fmt.Errorf("unable to re-read vGPU config label before restoring GPU operands: %w", err))
+	}
+	if currentConfig == "" {
+		currentConfig = r.defaultVGPUConfig
+	}
+	if currentConfig != selectedConfig {
+		return newRetryableConfigError(
+			fmt.Errorf("vGPU config changed from %q to %q while applying it", selectedConfig, currentConfig),
+		)
 	}
 
 	return nil
@@ -439,70 +561,45 @@ func getVGPUConfigStateValue(err error) string {
 	return "success"
 }
 
-func getNodeStateLabels(clientset *kubernetes.Clientset) error {
-	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
+func (r *configReconciler) shutdownGPUOperands(ctx context.Context) (operandPauseResult, error) {
+	pauseResult, err := pauseGPUOperandLabels(ctx, r.clientset, r.nodeName)
 	if err != nil {
-		return fmt.Errorf("unable to get node object: %v", err)
+		return operandPauseResult{}, newRetryableConfigError(err)
 	}
-	labels := node.GetLabels()
 
-	log.Infof("Getting current value of '%s' node label", pluginStateLabel)
-	pluginDeployed = labels[pluginStateLabel]
-	log.Infof("Current value of '%s=%s'", pluginStateLabel, pluginDeployed)
+	log.Info("Waiting for sandbox-device-plugin to shutdown")
+	err = r.operations.waitForOperandShutdown(ctx, "app=nvidia-sandbox-device-plugin-daemonset")
+	if err == nil {
+		log.Info("Waiting for sandbox-validator to shutdown")
+		err = r.operations.waitForOperandShutdown(ctx, "app=nvidia-sandbox-validator")
+	}
+	if err == nil {
+		return pauseResult, nil
+	}
 
-	log.Infof("Getting current value of '%s' node label", validatorStateLabel)
-	validatorDeployed = labels[validatorStateLabel]
-	log.Infof("Current value of '%s=%s'", validatorStateLabel, validatorDeployed)
+	// If this process acquired the pause, no hardware operation has started and
+	// both labels can be rolled back. If the pause predated this process, the
+	// hardware state is unknown and the device plugin must remain paused.
+	restorePlugin := !pauseResult.recovering()
+	if restoreErr := restoreGPUOperandLabels(ctx, r.clientset, r.nodeName, restorePlugin, true); restoreErr != nil {
+		return pauseResult, newRetryableConfigError(
+			fmt.Errorf("GPU operand shutdown failed: %w; unable to roll back operand labels: %w", err, restoreErr),
+		)
+	}
 
-	return nil
+	return pauseResult, newRetryableConfigError(fmt.Errorf("GPU operand shutdown failed: %w", err))
 }
 
-func shutdownGPUOperands(clientset *kubernetes.Clientset) error {
-	// shutdown components by updating their respective state labels.
-	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to get node object: %v", err)
-	}
-	labels := node.GetLabels()
-
-	pluginDeployed = maybeSetPaused(pluginDeployed)
-	validatorDeployed = maybeSetPaused(validatorDeployed)
-	labels[pluginStateLabel] = pluginDeployed
-	labels[validatorStateLabel] = validatorDeployed
-
-	node.SetLabels(labels)
-	_, err = clientset.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to update node object: %v", err)
-	}
-
-	// wait for pods to be deleted
-	log.Infof("Waiting for sandbox-device-plugin to shutdown")
-	err = waitForPodDeletion(clientset, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeNameFlag),
-		LabelSelector: "app=nvidia-sandbox-device-plugin-daemonset",
-	})
-	if err != nil {
-		return fmt.Errorf("error shutting down sandbox-device-plugin: %v", err)
-	}
-
-	log.Infof("Waiting for sandbox-validator to shutdown")
-	err = waitForPodDeletion(clientset, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeNameFlag),
-		LabelSelector: "app=nvidia-sandbox-validator",
-	})
-	if err != nil {
-		return fmt.Errorf("error shutting down sandbox-validator: %v", err)
-	}
-
-	return nil
-}
-
-func waitForPodDeletion(clientset *kubernetes.Clientset, listOpts metav1.ListOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+func waitForPodDeletion(
+	parent context.Context,
+	clientset kubernetes.Interface,
+	namespace string,
+	listOpts metav1.ListOptions,
+) error {
+	ctx, cancel := context.WithTimeout(parent, 120*time.Second)
 	defer cancel()
 	pollFunc := func(context.Context) (bool, error) {
-		podList, err := clientset.CoreV1().Pods(namespaceFlag).List(ctx, listOpts)
+		podList, err := clientset.CoreV1().Pods(namespace).List(ctx, listOpts)
 		if apierrors.IsNotFound(err) {
 			log.Infof("Pod was already deleted")
 			return true, nil
@@ -524,41 +621,17 @@ func waitForPodDeletion(clientset *kubernetes.Clientset, listOpts metav1.ListOpt
 	return nil
 }
 
-func rescheduleGPUOperands(clientset *kubernetes.Clientset) error {
-	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to get node object: %v", err)
-	}
-	labels := node.GetLabels()
-
-	labels[pluginStateLabel] = maybeSetTrue(pluginDeployed)
-	labels[validatorStateLabel] = maybeSetTrue(validatorDeployed)
-
-	node.SetLabels(labels)
-	_, err = clientset.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to update node object: %v", err)
-	}
-
-	return nil
+func getNodeLabelValue(clientset kubernetes.Interface, label string) (string, error) {
+	return getNodeLabelValueForNode(context.TODO(), clientset, nodeNameFlag, label)
 }
 
-func maybeSetPaused(currentValue string) string {
-	if currentValue == "false" || currentValue == "" {
-		return currentValue
-	}
-	return "paused-for-vgpu-change"
-}
-
-func maybeSetTrue(currentValue string) string {
-	if currentValue == "false" || currentValue == "" {
-		return currentValue
-	}
-	return "true"
-}
-
-func getNodeLabelValue(clientset *kubernetes.Clientset, label string) (string, error) {
-	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
+func getNodeLabelValueForNode(
+	ctx context.Context,
+	clientset kubernetes.Interface,
+	nodeName string,
+	label string,
+) (string, error) {
+	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("unable to get node object: %v", err)
 	}
@@ -571,16 +644,32 @@ func getNodeLabelValue(clientset *kubernetes.Clientset, label string) (string, e
 	return value, nil
 }
 
-func setNodeLabelValue(clientset *kubernetes.Clientset, label, value string) error {
-	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeNameFlag, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to get node object: %v", err)
-	}
+func setNodeLabelValue(clientset kubernetes.Interface, label, value string) error {
+	return setNodeLabelValueForNode(context.TODO(), clientset, nodeNameFlag, label, value)
+}
 
-	labels := node.GetLabels()
-	labels[label] = value
-	node.SetLabels(labels)
-	_, err = clientset.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+func setNodeLabelValueForNode(
+	ctx context.Context,
+	clientset kubernetes.Interface,
+	nodeName string,
+	label string,
+	value string,
+) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		labels := node.GetLabels()
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labels[label] = value
+		node.SetLabels(labels)
+		_, err = clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("unable to update node object: %v", err)
 	}
