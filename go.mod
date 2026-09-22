@@ -4,20 +4,20 @@ go 1.26.0
 
 require (
 	github.com/NVIDIA/go-nvlib v0.12.0
-	github.com/NVIDIA/mig-parted v0.15.0
+	github.com/NVIDIA/mig-parted v0.15.1
 	github.com/go-playground/validator/v10 v10.30.4
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v2 v2.27.7
-	k8s.io/api v0.36.3
-	k8s.io/apimachinery v0.36.3
-	k8s.io/client-go v0.36.3
+	k8s.io/api v0.36.4
+	k8s.io/apimachinery v0.36.4
+	k8s.io/client-go v0.36.4
 	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
-	github.com/NVIDIA/go-nvml v0.13.3-1 // indirect
+	github.com/NVIDIA/go-nvml v0.13.4-0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
