@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -169,7 +170,7 @@ func reconfigureMIG(clientset *kubernetes.Clientset, opts *reconfigureMIGOptions
 	if err := applyMIGModeOnly(opts); err != nil || assertMIGModeOnly(opts) != nil {
 		if opts.WithReboot {
 			log.Infof("Changing the '%s' node label to '%s'", vGPUConfigStateLabel, configStateRebooting)
-			if err := setNodeLabelValue(clientset, vGPUConfigStateLabel, configStateRebooting); err != nil {
+			if err := setNodeLabelValueForNode(context.TODO(), clientset, nodeNameFlag, vGPUConfigStateLabel, configStateRebooting); err != nil {
 				log.Errorf("Unable to set the value of '%s' to '%s'", vGPUConfigStateLabel, configStateRebooting)
 				log.Error("Exiting so as not to reboot multiple times unexpectedly")
 				return err
