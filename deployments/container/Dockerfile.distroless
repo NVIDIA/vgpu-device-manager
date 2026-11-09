@@ -40,7 +40,7 @@ RUN mkdir /busybox \
 COPY scripts/check-busybox-prefer-applets.sh /tmp/check-busybox-prefer-applets.sh
 RUN /tmp/check-busybox-prefer-applets.sh /busybox/busybox
 
-FROM nvcr.io/nvidia/distroless/go:v4.2.0
+FROM nvcr.io/nvidia/distroless/go:v4.2.1
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
