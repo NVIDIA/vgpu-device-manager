@@ -59,7 +59,7 @@ $(BUILD_TARGETS): build-%:
 		$(DOCKER_BUILD_OPTIONS) \
 		$(DOCKER_BUILD_PLATFORM_OPTIONS) \
 		--tag $(IMAGE) \
-		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg GOLANG_IMAGE="$(GOLANG_IMAGE)" \
 		--build-arg VERSION="$(VERSION)" \
 		--build-arg GIT_COMMIT="$(GIT_COMMIT)" \
 		--build-arg CVE_UPDATES="$(CVE_UPDATES)" \

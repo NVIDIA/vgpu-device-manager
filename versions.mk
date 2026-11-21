@@ -15,6 +15,7 @@
 VERSION ?= v0.5.2
 
 GOLANG_VERSION := $(shell ./hack/golang-version.sh)
+GOLANG_IMAGE := $(shell sed -nE 's/^FROM (golang:[^[:space:]]+).*/\1/p' deployments/devel/Dockerfile)
 
 GO_LICENSES_VERSION := v2.0.1
 
